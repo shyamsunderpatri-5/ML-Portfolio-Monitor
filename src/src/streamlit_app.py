@@ -454,7 +454,7 @@ def is_market_hours():
 # GAP 1: MARKET HEALTH CHECK (NIFTY + VIX)
 # ============================================================================
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=600)  # Cache for 5 minutes
 def get_market_health():
     """
     Analyze NIFTY 50 and India VIX to determine overall market health
@@ -4268,23 +4268,25 @@ def render_sidebar():
             st.caption(f"🔄 API calls: {st.session_state.get('api_call_count', 0)}")
         
         # =====================================================================
-        # AI FEATURES (OPTIONAL)
+        # AI FEATURES (OPTIONAL) - FIXED VERSION
         # =====================================================================
         st.markdown("### 🤖 AI Features")
-        
+
         with st.expander("AI Analysis & Backtesting", expanded=False):
             st.info("🔧 AI features require additional setup")
             
-            # Check if AI module is available
+            # Check if AI module is available - FIXED IMPORTS
             try:
                 from ai_features import (
                     run_simple_backtest,
-                    optimize_portfolio_weights,
-                    AI_CONFIG
+                    get_available_features,  # ✅ Changed from optimize_portfolio_weights
+                    AVAILABLE_FEATURES       # ✅ Changed from AI_CONFIG
                 )
                 ai_available = True
-            except ImportError:
+                ai_error = None
+            except ImportError as e:
                 ai_available = False
+                ai_error = str(e)
             
             if ai_available:
                 st.success("✅ AI module loaded")
@@ -4302,22 +4304,24 @@ def render_sidebar():
                     with st.spinner("Running backtest..."):
                         results = run_simple_backtest(bt_ticker, "1y", bt_sl, bt_target)
                     
-                    if 'error' not in results:
-                        st.success(f"✅ Backtest Complete: {results['total_trades']} trades")
+                    if results.get('status') == 'success':
+                        summary = results.get('summary', {})
+                        st.success(f"✅ Backtest Complete: {summary.get('total_trades', 0)} trades")
                         
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("Win Rate", f"{results['win_rate']:.1f}%")
+                            st.metric("Win Rate", f"{summary.get('win_rate', 0):.1f}%")
                         with col2:
-                            st.metric("Profit Factor", f"{results['profit_factor']:.2f}")
+                            pf = summary.get('profit_factor', 0)
+                            st.metric("Profit Factor", f"{pf:.2f}" if isinstance(pf, (int, float)) else pf)
                         with col3:
-                            st.metric("Net P&L", f"₹{results['net_pnl']:+,.0f}")
+                            st.metric("Net P&L", f"₹{summary.get('net_pnl', 0):+,.0f}")
                     else:
-                        st.error(f"❌ {results['error']}")
+                        st.error(f"❌ {results.get('message', 'Unknown error')}")
             else:
-                st.warning("⚠️ AI module not found")
-                st.caption("Create `ai_features.py` in the same folder")
-                st.code("pip install anthropic scipy requests", language="bash")
+                st.warning(f"⚠️ AI module error: {ai_error}")
+                st.caption("Check the import in ai_features.py")
+
         # =====================================================================
         # DEBUG INFO
         # =====================================================================
