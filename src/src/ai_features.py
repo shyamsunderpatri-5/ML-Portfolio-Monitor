@@ -1849,3 +1849,18 @@ def test_all_features():
 
 if __name__ == "__main__":
     test_all_features()
+
+# At the bottom of ai_features.py, add:
+
+# Make sure these are all defined in the file:
+__all__ = [
+    'get_available_features',
+    'run_simple_backtest',
+    'get_rl_optimized_sl',
+    'monte_carlo_portfolio_optimization',
+    'predict_price_lstm',
+    'detect_market_regime',
+    'get_real_sentiment',
+    'rl_optimizer',
+    'AVAILABLE_FEATURES',
+]
