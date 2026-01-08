@@ -1,6 +1,5 @@
 """
 🧠 AI TRADING BRAIN - Professional Position Manager
-====================================================
 This is the CORE AI that monitors and manages your positions.
 
 Features:
@@ -12,7 +11,7 @@ Features:
 - Automatic level updates
 
 Author: Smart Portfolio Monitor
-Version: 1.0
+Version: 1.1 (FIXED)
 """
 
 import pandas as pd
@@ -28,43 +27,44 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-
 TRADING_CONFIG = {
     # Position Management
-    'max_position_risk_pct': 2.0,      # Max 2% risk per position
-    'trail_start_pct': 2.0,            # Start trailing after 2% profit
-    'trail_step_pct': 0.5,             # Trail in 0.5% steps
+    'max_position_risk_pct': 2.0,
+    'trail_start_pct': 2.0,
+    'trail_step_pct': 0.5,
     
     # Target Extension
-    'extend_target_momentum_threshold': 70,  # Momentum > 70 = can extend
-    'extend_target_max_pct': 50,             # Max 50% target extension
-    'target_extension_atr_multiplier': 2.0,  # Extend by 2x ATR
+    'extend_target_momentum_threshold': 70,
+    'extend_target_max_pct': 50,
+    'target_extension_atr_multiplier': 2.0,
     
     # Stop Loss
-    'min_sl_distance_pct': 1.0,        # Minimum 1% SL distance
-    'max_sl_distance_pct': 5.0,        # Maximum 5% SL distance
-    'breakeven_trigger_pct': 2.0,      # Move to breakeven at 2%
+    'min_sl_distance_pct': 1.0,
+    'max_sl_distance_pct': 5.0,
+    'breakeven_trigger_pct': 2.0,
     
     # Market Regime Adjustments
-    'bullish_target_boost': 1.3,       # 30% higher targets in bull
-    'bearish_sl_tighten': 0.7,         # 30% tighter SL in bear
+    'bullish_target_boost': 1.3,
+    'bearish_sl_tighten': 0.7,
     
     # News Impact
-    'positive_news_target_boost': 1.15,  # 15% boost on good news
-    'negative_news_sl_tighten': 0.8,     # 20% tighter SL on bad news
+    'positive_news_target_boost': 1.15,
+    'negative_news_sl_tighten': 0.8,
     
     # Confidence Thresholds
-    'min_confidence_to_extend': 60,    # Need 60% confidence to extend
-    'min_signals_for_action': 2,       # Need 2+ signals to act
+    'min_confidence_to_extend': 60,
+    'min_signals_for_action': 2,
 }
 
 
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
 def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     """Calculate RSI"""
+    if prices is None or len(prices) < period:
+        return pd.Series([50] * len(prices) if prices is not None else [50])
+    
     delta = prices.diff()
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
@@ -76,6 +76,11 @@ def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
 
 def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
     """Calculate ATR"""
+    if high is None or low is None or close is None:
+        return pd.Series([0])
+    if len(high) < period:
+        return pd.Series([0] * len(high))
+    
     tr1 = high - low
     tr2 = abs(high - close.shift())
     tr3 = abs(low - close.shift())
@@ -84,13 +89,11 @@ def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int
 
 
 def calculate_fibonacci_extensions(low: float, high: float, direction: str = 'LONG') -> Dict[str, float]:
-    """
-    Calculate Fibonacci extension levels for targets
-    
-    For LONG: Extensions above the high
-    For SHORT: Extensions below the low
-    """
+    """Calculate Fibonacci extension levels for targets"""
     diff = high - low
+    
+    if diff <= 0:
+        diff = abs(high * 0.05)  # Default to 5% if no range
     
     if direction == 'LONG':
         return {
@@ -101,7 +104,7 @@ def calculate_fibonacci_extensions(low: float, high: float, direction: str = 'LO
             'fib_2.0': high + (diff * 1.0),
             'fib_2.618': high + (diff * 1.618),
         }
-    else:  # SHORT
+    else:
         return {
             'fib_1.0': low,
             'fib_1.272': low - (diff * 0.272),
@@ -114,32 +117,48 @@ def calculate_fibonacci_extensions(low: float, high: float, direction: str = 'LO
 
 def find_support_resistance_zones(df: pd.DataFrame, lookback: int = 60) -> Dict:
     """Find key support and resistance zones"""
+    if df is None or df.empty:
+        return {
+            'supports': [100],
+            'resistances': [100],
+            'nearest_support': 100,
+            'nearest_resistance': 100
+        }
+    
     if len(df) < lookback:
         lookback = len(df)
+    
+    if lookback < 5:
+        current_price = float(df['Close'].iloc[-1])
+        return {
+            'supports': [current_price * 0.95],
+            'resistances': [current_price * 1.05],
+            'nearest_support': current_price * 0.95,
+            'nearest_resistance': current_price * 1.05
+        }
     
     recent = df.tail(lookback)
     current_price = float(df['Close'].iloc[-1])
     
-    # Find pivot highs and lows
     highs = []
     lows = []
     
     for i in range(2, len(recent) - 2):
-        # Pivot high
-        if (recent['High'].iloc[i] > recent['High'].iloc[i-1] and
-            recent['High'].iloc[i] > recent['High'].iloc[i-2] and
-            recent['High'].iloc[i] > recent['High'].iloc[i+1] and
-            recent['High'].iloc[i] > recent['High'].iloc[i+2]):
-            highs.append(float(recent['High'].iloc[i]))
-        
-        # Pivot low
-        if (recent['Low'].iloc[i] < recent['Low'].iloc[i-1] and
-            recent['Low'].iloc[i] < recent['Low'].iloc[i-2] and
-            recent['Low'].iloc[i] < recent['Low'].iloc[i+1] and
-            recent['Low'].iloc[i] < recent['Low'].iloc[i+2]):
-            lows.append(float(recent['Low'].iloc[i]))
+        try:
+            if (recent['High'].iloc[i] > recent['High'].iloc[i-1] and
+                recent['High'].iloc[i] > recent['High'].iloc[i-2] and
+                recent['High'].iloc[i] > recent['High'].iloc[i+1] and
+                recent['High'].iloc[i] > recent['High'].iloc[i+2]):
+                highs.append(float(recent['High'].iloc[i]))
+            
+            if (recent['Low'].iloc[i] < recent['Low'].iloc[i-1] and
+                recent['Low'].iloc[i] < recent['Low'].iloc[i-2] and
+                recent['Low'].iloc[i] < recent['Low'].iloc[i+1] and
+                recent['Low'].iloc[i] < recent['Low'].iloc[i+2]):
+                lows.append(float(recent['Low'].iloc[i]))
+        except (IndexError, KeyError):
+            continue
     
-    # Find nearest levels
     resistances = sorted([h for h in highs if h > current_price])
     supports = sorted([l for l in lows if l < current_price], reverse=True)
     
@@ -154,25 +173,15 @@ def find_support_resistance_zones(df: pd.DataFrame, lookback: int = 60) -> Dict:
 # ============================================================================
 # AI TRADING BRAIN - MAIN CLASS
 # ============================================================================
-
 class AITradingBrain:
     """
     🧠 The AI Trading Brain - Makes intelligent trading decisions
-    
-    This class:
-    1. Analyzes each position continuously
-    2. Calculates optimal SL/Target levels
-    3. Considers market conditions, news, technicals
-    4. Recommends adjustments with confidence scores
-    5. Tracks decision history for learning
     """
     
     def __init__(self):
         self.decision_history = []
         self.position_states = {}
         self.config = TRADING_CONFIG
-        
-        # Try to load AI features
         self.ai_features_available = self._check_ai_features()
     
     def _check_ai_features(self) -> Dict[str, bool]:
@@ -187,25 +196,25 @@ class AITradingBrain:
         try:
             from ai_features import predict_price_lstm
             available['lstm'] = True
-        except:
+        except Exception:
             pass
         
         try:
             from ai_features import get_real_sentiment
             available['sentiment'] = True
-        except:
+        except Exception:
             pass
         
         try:
             from ai_features import detect_market_regime
             available['regime'] = True
-        except:
+        except Exception:
             pass
         
         try:
             from ai_features import get_rl_optimized_sl
             available['rl_optimizer'] = True
-        except:
+        except Exception:
             pass
         
         return available
@@ -225,62 +234,53 @@ class AITradingBrain:
     ) -> Dict:
         """
         🧠 MAIN ANALYSIS FUNCTION
-        
-        Analyzes a position and returns:
-        - New recommended SL
-        - New recommended Target 1
-        - New recommended Target 2
-        - Confidence score
-        - Reasoning
-        - Action required
         """
         
-        if df is not None and not df.empty or len(df) < 20:
+        # Validate DataFrame
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty or len(df) < 20:
             return self._create_no_change_result(
                 ticker, original_sl, original_target1, original_target2,
                 "Insufficient data for analysis"
             )
         
-        # =====================================================================
-        # STEP 1: GATHER ALL SIGNALS
-        # =====================================================================
-        signals = self._gather_all_signals(
-            ticker, position_type, entry_price, current_price,
-            df, market_health
-        )
-        
-        # =====================================================================
-        # STEP 2: CALCULATE OPTIMAL LEVELS
-        # =====================================================================
-        optimal_levels = self._calculate_optimal_levels(
-            position_type, entry_price, current_price,
-            original_sl, original_target1, original_target2,
-            df, signals, market_health
-        )
-        
-        # =====================================================================
-        # STEP 3: DETERMINE IF CHANGES ARE NEEDED
-        # =====================================================================
-        changes = self._determine_changes(
-            original_sl, original_target1, original_target2,
-            optimal_levels, signals
-        )
-        
-        # =====================================================================
-        # STEP 4: GENERATE RECOMMENDATION
-        # =====================================================================
-        recommendation = self._generate_recommendation(
-            ticker, position_type, entry_price, current_price,
-            original_sl, original_target1, original_target2,
-            optimal_levels, changes, signals
-        )
-        
-        # =====================================================================
-        # STEP 5: LOG DECISION
-        # =====================================================================
-        self._log_decision(ticker, recommendation)
-        
-        return recommendation
+        try:
+            # STEP 1: GATHER ALL SIGNALS
+            signals = self._gather_all_signals(
+                ticker, position_type, entry_price, current_price,
+                df, market_health
+            )
+            
+            # STEP 2: CALCULATE OPTIMAL LEVELS
+            optimal_levels = self._calculate_optimal_levels(
+                position_type, entry_price, current_price,
+                original_sl, original_target1, original_target2,
+                df, signals, market_health
+            )
+            
+            # STEP 3: DETERMINE IF CHANGES ARE NEEDED
+            changes = self._determine_changes(
+                original_sl, original_target1, original_target2,
+                optimal_levels, signals
+            )
+            
+            # STEP 4: GENERATE RECOMMENDATION
+            recommendation = self._generate_recommendation(
+                ticker, position_type, entry_price, current_price,
+                original_sl, original_target1, original_target2,
+                optimal_levels, changes, signals
+            )
+            
+            # STEP 5: LOG DECISION
+            self._log_decision(ticker, recommendation)
+            
+            return recommendation
+            
+        except Exception as e:
+            logger.error(f"Error analyzing {ticker}: {e}")
+            return self._create_no_change_result(
+                ticker, original_sl, original_target1, original_target2,
+                f"Analysis error: {str(e)}"
+            )
     
     def _gather_all_signals(
         self,
@@ -292,6 +292,7 @@ class AITradingBrain:
         market_health: Optional[Dict]
     ) -> Dict:
         """Gather all available signals for decision making"""
+        market_health = market_health or {}
         
         signals = {
             'timestamp': datetime.now(),
@@ -301,64 +302,58 @@ class AITradingBrain:
             'entry_price': entry_price,
             'pnl_pct': ((current_price - entry_price) / entry_price) * 100 if position_type == 'LONG' 
                        else ((entry_price - current_price) / entry_price) * 100,
-            
-            # Technical signals
             'technical': {},
-            
-            # Market signals
             'market': {},
-            
-            # AI signals
             'ai': {},
-            
-            # Sentiment signals
             'sentiment': {},
-            
-            # Aggregated
             'bullish_score': 0,
             'bearish_score': 0,
             'confidence': 0,
             'trend_strength': 'NEUTRAL'
         }
         
-        # -----------------------------------------------------------------
         # TECHNICAL ANALYSIS
-        # -----------------------------------------------------------------
         try:
             close = df['Close']
             high = df['High']
             low = df['Low']
             
             # RSI
-            rsi = calculate_rsi(close).iloc[-1]
+            rsi_series = calculate_rsi(close)
+            rsi = rsi_series.iloc[-1] if len(rsi_series) > 0 else 50
             signals['technical']['rsi'] = float(rsi) if not pd.isna(rsi) else 50
             
             # Moving Averages
-            sma20 = close.rolling(20).mean().iloc[-1]
+            sma20 = close.rolling(20).mean().iloc[-1] if len(close) >= 20 else close.iloc[-1]
             sma50 = close.rolling(50).mean().iloc[-1] if len(close) >= 50 else sma20
-            ema9 = close.ewm(span=9).mean().iloc[-1]
-            ema21 = close.ewm(span=21).mean().iloc[-1]
+            ema9 = close.ewm(span=9).mean().iloc[-1] if len(close) >= 9 else close.iloc[-1]
+            ema21 = close.ewm(span=21).mean().iloc[-1] if len(close) >= 21 else close.iloc[-1]
             
-            signals['technical']['sma20'] = float(sma20)
-            signals['technical']['sma50'] = float(sma50)
-            signals['technical']['ema9'] = float(ema9)
-            signals['technical']['ema21'] = float(ema21)
-            signals['technical']['above_sma20'] = current_price > sma20
-            signals['technical']['above_sma50'] = current_price > sma50
-            signals['technical']['ema_bullish'] = ema9 > ema21
-            signals['technical']['golden_cross'] = sma20 > sma50
+            signals['technical']['sma20'] = float(sma20) if not pd.isna(sma20) else current_price
+            signals['technical']['sma50'] = float(sma50) if not pd.isna(sma50) else current_price
+            signals['technical']['ema9'] = float(ema9) if not pd.isna(ema9) else current_price
+            signals['technical']['ema21'] = float(ema21) if not pd.isna(ema21) else current_price
+            signals['technical']['above_sma20'] = current_price > signals['technical']['sma20']
+            signals['technical']['above_sma50'] = current_price > signals['technical']['sma50']
+            signals['technical']['ema_bullish'] = signals['technical']['ema9'] > signals['technical']['ema21']
+            signals['technical']['golden_cross'] = signals['technical']['sma20'] > signals['technical']['sma50']
             
             # ATR
-            atr = calculate_atr(high, low, close).iloc[-1]
+            atr_series = calculate_atr(high, low, close)
+            atr = atr_series.iloc[-1] if len(atr_series) > 0 else current_price * 0.02
             signals['technical']['atr'] = float(atr) if not pd.isna(atr) else current_price * 0.02
             signals['technical']['atr_pct'] = (signals['technical']['atr'] / current_price) * 100
             
-            # Momentum (5-day returns)
-            returns_5d = ((close.iloc[-1] / close.iloc[-6]) - 1) * 100 if len(close) > 6 else 0
-            signals['technical']['momentum_5d'] = float(returns_5d)
+            # Momentum
+            if len(close) > 6:
+                returns_5d = ((close.iloc[-1] / close.iloc[-6]) - 1) * 100
+            else:
+                returns_5d = 0
+            signals['technical']['momentum_5d'] = float(returns_5d) if not pd.isna(returns_5d) else 0
             
             # Volatility
-            volatility = close.pct_change().tail(20).std() * np.sqrt(252) * 100
+            pct_change = close.pct_change().tail(20)
+            volatility = pct_change.std() * np.sqrt(252) * 100 if len(pct_change) > 0 else 20
             signals['technical']['volatility'] = float(volatility) if not pd.isna(volatility) else 20
             
             # Support/Resistance
@@ -369,8 +364,8 @@ class AITradingBrain:
             signals['technical']['resistances'] = sr['resistances']
             
             # Fibonacci levels
-            recent_low = low.tail(60).min()
-            recent_high = high.tail(60).max()
+            recent_low = float(low.tail(60).min())
+            recent_high = float(high.tail(60).max())
             fib_levels = calculate_fibonacci_extensions(recent_low, recent_high, position_type)
             signals['technical']['fib_levels'] = fib_levels
             
@@ -385,34 +380,26 @@ class AITradingBrain:
         except Exception as e:
             logger.warning(f"Technical analysis error for {ticker}: {e}")
             signals['technical']['error'] = str(e)
+            signals['technical']['atr'] = current_price * 0.02
         
-        # -----------------------------------------------------------------
         # MARKET HEALTH
-        # -----------------------------------------------------------------
-        if market_health is not None:
-            signals['market']['status'] = market_health.get('status', 'NEUTRAL')
-            signals['market']['health_score'] = market_health.get('health_score', 50)
-            signals['market']['vix'] = market_health.get('vix', 15)
-            signals['market']['nifty_change'] = market_health.get('nifty_change', 0)
-            signals['market']['above_sma20'] = market_health.get('above_sma20', True)
-            
-            # Market regime adjustments
-            if signals['market']['status'] == 'BULLISH':
-                signals['market']['target_multiplier'] = self.config['bullish_target_boost']
-                signals['market']['sl_multiplier'] = 1.0  # Normal SL in bull
-            elif signals['market']['status'] == 'BEARISH':
-                signals['market']['target_multiplier'] = 1.0  # Normal targets in bear
-                signals['market']['sl_multiplier'] = self.config['bearish_sl_tighten']
-            else:
-                signals['market']['target_multiplier'] = 1.0
-                signals['market']['sl_multiplier'] = 1.0
+        signals['market']['status'] = market_health.get('status', 'NEUTRAL')
+        signals['market']['health_score'] = market_health.get('health_score', 50)
+        signals['market']['vix'] = market_health.get('vix', 15)
+        signals['market']['nifty_change'] = market_health.get('nifty_change', 0)
+        signals['market']['above_sma20'] = market_health.get('above_sma20', True)
+        
+        if signals['market']['status'] == 'BULLISH':
+            signals['market']['target_multiplier'] = self.config['bullish_target_boost']
+            signals['market']['sl_multiplier'] = 1.0
+        elif signals['market']['status'] == 'BEARISH':
+            signals['market']['target_multiplier'] = 1.0
+            signals['market']['sl_multiplier'] = self.config['bearish_sl_tighten']
         else:
             signals['market']['target_multiplier'] = 1.0
             signals['market']['sl_multiplier'] = 1.0
         
-        # -----------------------------------------------------------------
         # AI PREDICTIONS (if available)
-        # -----------------------------------------------------------------
         if self.ai_features_available.get('lstm') and len(df) >= 100:
             try:
                 from ai_features import predict_price_lstm
@@ -426,22 +413,6 @@ class AITradingBrain:
             except Exception as e:
                 logger.warning(f"LSTM prediction error: {e}")
         
-        if self.ai_features_available.get('regime'):
-            try:
-                from ai_features import detect_market_regime
-                import yfinance as yf
-                
-                nifty = yf.Ticker("^NSEI")
-                nifty_df = nifty.history(period="1y")
-                
-                if not nifty_df.empty:
-                    regime_result = detect_market_regime(nifty_df)
-                    if regime_result and regime_result.get('status') == 'success':
-                        signals['ai']['regime'] = regime_result.get('regime')
-                        signals['ai']['regime_confidence'] = regime_result.get('confidence')
-            except Exception as e:
-                logger.warning(f"Regime detection error: {e}")
-        
         if self.ai_features_available.get('rl_optimizer'):
             try:
                 from ai_features import get_rl_optimized_sl
@@ -453,9 +424,7 @@ class AITradingBrain:
             except Exception as e:
                 logger.warning(f"RL optimizer error: {e}")
         
-        # -----------------------------------------------------------------
         # SENTIMENT (if available)
-        # -----------------------------------------------------------------
         if self.ai_features_available.get('sentiment'):
             try:
                 from ai_features import get_real_sentiment
@@ -468,9 +437,7 @@ class AITradingBrain:
             except Exception as e:
                 logger.warning(f"Sentiment analysis error: {e}")
         
-        # -----------------------------------------------------------------
         # CALCULATE AGGREGATE SCORES
-        # -----------------------------------------------------------------
         signals = self._calculate_aggregate_scores(signals, position_type)
         
         return signals
@@ -487,7 +454,7 @@ class AITradingBrain:
         ai = signals.get('ai', {})
         sentiment = signals.get('sentiment', {})
         
-        # Technical factors (weight: 40%)
+        # Technical factors
         if tech.get('rsi', 50) > 50:
             bullish_score += 10
         else:
@@ -513,7 +480,7 @@ class AITradingBrain:
         else:
             bearish_score += 7
         
-        # Market factors (weight: 25%)
+        # Market factors
         if market.get('status') == 'BULLISH':
             bullish_score += 15
         elif market.get('status') == 'BEARISH':
@@ -521,13 +488,13 @@ class AITradingBrain:
         elif market.get('status') == 'WEAK':
             bearish_score += 10
         
-        market_health = market.get('health_score', 50)
-        if market_health >= 70:
+        market_health_score = market.get('health_score', 50)
+        if market_health_score >= 70:
             bullish_score += 10
-        elif market_health <= 30:
+        elif market_health_score <= 30:
             bearish_score += 10
         
-        # AI factors (weight: 25%)
+        # AI factors
         lstm_trend = ai.get('lstm_trend', '')
         if lstm_trend == 'BULLISH':
             bullish_score += 15
@@ -536,15 +503,7 @@ class AITradingBrain:
             bearish_score += 15
             confidence_factors.append(ai.get('lstm_confidence', 50))
         
-        regime = ai.get('regime', '')
-        if 'BULL' in regime:
-            bullish_score += 10
-            confidence_factors.append(ai.get('regime_confidence', 50))
-        elif 'BEAR' in regime:
-            bearish_score += 10
-            confidence_factors.append(ai.get('regime_confidence', 50))
-        
-        # Sentiment factors (weight: 10%)
+        # Sentiment factors
         sent_type = sentiment.get('type', 'NEUTRAL')
         if sent_type in ['BULLISH', 'SLIGHTLY_BULLISH']:
             bullish_score += 10
@@ -572,11 +531,10 @@ class AITradingBrain:
         else:
             trend_strength = 'NEUTRAL'
         
-        # Overall confidence
         if confidence_factors:
             confidence = int(np.mean(confidence_factors))
         else:
-            confidence = int(min(bull_pct, bear_pct) + 20)  # Higher diff = higher confidence
+            confidence = int(min(bull_pct, bear_pct) + 20)
         
         signals['bullish_score'] = bullish_score
         signals['bearish_score'] = bearish_score
@@ -599,11 +557,7 @@ class AITradingBrain:
         signals: Dict,
         market_health: Optional[Dict]
     ) -> Dict:
-        """
-        🎯 Calculate optimal SL and Target levels
-        
-        This is where the magic happens - dynamic level calculation
-        """
+        """Calculate optimal SL and Target levels"""
         
         tech = signals.get('technical', {})
         market = signals.get('market', {})
@@ -612,7 +566,6 @@ class AITradingBrain:
         atr = tech.get('atr', current_price * 0.02)
         pnl_pct = signals.get('pnl_pct', 0)
         
-        # Initialize with original values
         optimal = {
             'sl': original_sl,
             'target1': original_target1,
@@ -623,49 +576,39 @@ class AITradingBrain:
             'changes_made': False
         }
         
-        # =====================================================================
         # STOP LOSS CALCULATION
-        # =====================================================================
-        
         if position_type == 'LONG':
-            # Base SL from ATR
             atr_sl = current_price - (atr * 2.0)
-            
-            # Consider RL optimizer suggestion
             rl_sl = ai.get('rl_optimal_sl', atr_sl)
-            
-            # Support-based SL
             nearest_support = tech.get('nearest_support', entry_price * 0.95)
-            support_sl = nearest_support - (atr * 0.5)  # Just below support
+            support_sl = nearest_support - (atr * 0.5)
             
-            # Trail SL based on profit
             trail_sl = original_sl
-            if pnl_pct >= 10:  # 10%+ profit
-                trail_sl = entry_price + (current_price - entry_price) * 0.7  # Lock 70%
+            if pnl_pct >= 10:
+                trail_sl = entry_price + (current_price - entry_price) * 0.7
                 optimal['sl_reason'] = 'Trail: Locking 70% profit'
-            elif pnl_pct >= 6:  # 6%+ profit
-                trail_sl = entry_price + (current_price - entry_price) * 0.5  # Lock 50%
+            elif pnl_pct >= 6:
+                trail_sl = entry_price + (current_price - entry_price) * 0.5
                 optimal['sl_reason'] = 'Trail: Locking 50% profit'
-            elif pnl_pct >= 4:  # 4%+ profit
-                trail_sl = entry_price + (current_price - entry_price) * 0.3  # Lock 30%
+            elif pnl_pct >= 4:
+                trail_sl = entry_price + (current_price - entry_price) * 0.3
                 optimal['sl_reason'] = 'Trail: Locking 30% profit'
-            elif pnl_pct >= self.config['breakeven_trigger_pct']:  # 2%+ profit
-                trail_sl = entry_price * 1.002  # Move to breakeven + 0.2%
+            elif pnl_pct >= self.config['breakeven_trigger_pct']:
+                trail_sl = entry_price * 1.002
                 optimal['sl_reason'] = 'Trail: Moved to breakeven'
             
-            # Choose best SL (highest of all methods, but below current price)
-            candidate_sls = [s for s in [atr_sl, rl_sl, support_sl, trail_sl] if s < current_price]
+            candidate_sls = [s for s in [atr_sl, rl_sl, support_sl, trail_sl] 
+                            if s is not None and s < current_price]
             
             if candidate_sls:
                 best_sl = max(candidate_sls)
                 
-                # Never move SL down (only up for longs)
                 if best_sl > original_sl:
                     optimal['sl'] = best_sl
                     optimal['changes_made'] = True
                     
                     if best_sl == trail_sl:
-                        pass  # Reason already set
+                        pass
                     elif best_sl == rl_sl:
                         optimal['sl_reason'] = 'RL Optimizer suggestion'
                     elif best_sl == support_sl:
@@ -673,9 +616,8 @@ class AITradingBrain:
                     else:
                         optimal['sl_reason'] = 'ATR-based stop'
             
-            # Market regime adjustment
             sl_multiplier = market.get('sl_multiplier', 1.0)
-            if sl_multiplier < 1.0:  # Bearish market - tighten
+            if sl_multiplier < 1.0:
                 tightened_sl = current_price - (current_price - optimal['sl']) * sl_multiplier
                 if tightened_sl > optimal['sl']:
                     optimal['sl'] = tightened_sl
@@ -683,7 +625,6 @@ class AITradingBrain:
                     optimal['changes_made'] = True
         
         else:  # SHORT position
-            # Similar logic but inverted
             atr_sl = current_price + (atr * 2.0)
             rl_sl = ai.get('rl_optimal_sl', atr_sl)
             nearest_resistance = tech.get('nearest_resistance', entry_price * 1.05)
@@ -703,58 +644,48 @@ class AITradingBrain:
                 trail_sl = entry_price * 0.998
                 optimal['sl_reason'] = 'Trail: Moved to breakeven'
             
-            candidate_sls = [s for s in [atr_sl, rl_sl, resistance_sl, trail_sl] if s > current_price]
+            candidate_sls = [s for s in [atr_sl, rl_sl, resistance_sl, trail_sl] 
+                            if s is not None and s > current_price]
             
             if candidate_sls:
                 best_sl = min(candidate_sls)
                 
-                if best_sl < original_sl:  # Move SL down for shorts
+                if best_sl < original_sl:
                     optimal['sl'] = best_sl
                     optimal['changes_made'] = True
         
-        # =====================================================================
         # TARGET CALCULATION
-        # =====================================================================
-        
         trend = signals.get('trend_strength', 'NEUTRAL')
         confidence = signals.get('confidence', 50)
         momentum = tech.get('momentum_5d', 0)
-        
-        # Fibonacci levels
         fib = tech.get('fib_levels', {})
         
         if position_type == 'LONG':
-            # Check if we can extend targets
             can_extend = (
                 trend in ['STRONG_BULLISH', 'BULLISH'] and
                 confidence >= self.config['min_confidence_to_extend'] and
                 momentum > 0 and
-                pnl_pct > 0  # Only extend if already in profit
+                pnl_pct > 0
             )
             
             if can_extend:
-                # Calculate extended targets
                 nearest_resistance = tech.get('nearest_resistance', original_target1)
                 
-                # Target 1: Use higher of original, Fib 1.272, or resistance
                 new_target1_candidates = [
                     original_target1,
                     fib.get('fib_1.272', original_target1),
                     nearest_resistance
                 ]
-                new_target1 = max([t for t in new_target1_candidates if t > current_price], 
-                                  default=original_target1)
+                valid_targets = [t for t in new_target1_candidates if t is not None and t > current_price]
+                new_target1 = max(valid_targets) if valid_targets else original_target1
                 
-                # Apply market multiplier
                 target_multiplier = market.get('target_multiplier', 1.0)
                 if target_multiplier > 1.0:
                     extension = (new_target1 - entry_price) * (target_multiplier - 1)
                     new_target1 = new_target1 + extension
                 
-                # LSTM prediction can extend further
                 lstm_pred = ai.get('lstm_prediction')
                 if lstm_pred and lstm_pred > new_target1 and ai.get('lstm_confidence', 0) >= 60:
-                    # Blend LSTM prediction (weight by confidence)
                     lstm_conf = ai.get('lstm_confidence', 50) / 100
                     new_target1 = new_target1 * (1 - lstm_conf * 0.3) + lstm_pred * (lstm_conf * 0.3)
                 
@@ -763,24 +694,24 @@ class AITradingBrain:
                     optimal['target1_reason'] = f'Extended ({trend}, {confidence}% conf)'
                     optimal['changes_made'] = True
                 
-                # Target 2: Higher extension
                 new_target2_candidates = [
                     original_target2,
                     fib.get('fib_1.618', original_target2),
-                    fib.get('fib_2.0', original_target2),
-                    tech.get('resistances', [original_target2])[1] if len(tech.get('resistances', [])) > 1 else original_target2
+                    fib.get('fib_2.0', original_target2)
                 ]
-                new_target2 = max([t for t in new_target2_candidates if t > optimal['target1']], 
-                                  default=original_target2)
+                resistances = tech.get('resistances', [])
+                if len(resistances) > 1:
+                    new_target2_candidates.append(resistances[1])
+                
+                valid_targets2 = [t for t in new_target2_candidates if t is not None and t > optimal['target1']]
+                new_target2 = max(valid_targets2) if valid_targets2 else original_target2
                 
                 if new_target2 > original_target2:
                     optimal['target2'] = new_target2
                     optimal['target2_reason'] = f'Extended to Fib 1.618/2.0'
                     optimal['changes_made'] = True
             
-            # Reduce targets in bearish conditions
             elif trend in ['STRONG_BEARISH', 'BEARISH'] and pnl_pct > 3:
-                # Book profits sooner
                 reduced_target1 = entry_price + (original_target1 - entry_price) * 0.7
                 if reduced_target1 < original_target1 and reduced_target1 > current_price:
                     optimal['target1'] = reduced_target1
@@ -803,8 +734,8 @@ class AITradingBrain:
                     fib.get('fib_1.272', original_target1),
                     nearest_support
                 ]
-                new_target1 = min([t for t in new_target1_candidates if t < current_price], 
-                                  default=original_target1)
+                valid_targets = [t for t in new_target1_candidates if t is not None and t < current_price]
+                new_target1 = min(valid_targets) if valid_targets else original_target1
                 
                 if new_target1 < original_target1:
                     optimal['target1'] = new_target1
@@ -823,13 +754,18 @@ class AITradingBrain:
     ) -> Dict:
         """Determine what changes are recommended"""
         
+        # Safe division
+        sl_change = abs(optimal['sl'] - original_sl) / max(original_sl, 0.01)
+        t1_change = abs(optimal['target1'] - original_target1) / max(original_target1, 0.01)
+        t2_change = abs(optimal['target2'] - original_target2) / max(original_target2, 0.01)
+        
         changes = {
-            'sl_changed': abs(optimal['sl'] - original_sl) / original_sl > 0.001,
-            'target1_changed': abs(optimal['target1'] - original_target1) / original_target1 > 0.001,
-            'target2_changed': abs(optimal['target2'] - original_target2) / original_target2 > 0.001,
-            'sl_change_pct': ((optimal['sl'] - original_sl) / original_sl) * 100,
-            'target1_change_pct': ((optimal['target1'] - original_target1) / original_target1) * 100,
-            'target2_change_pct': ((optimal['target2'] - original_target2) / original_target2) * 100,
+            'sl_changed': sl_change > 0.001,
+            'target1_changed': t1_change > 0.001,
+            'target2_changed': t2_change > 0.001,
+            'sl_change_pct': ((optimal['sl'] - original_sl) / max(original_sl, 0.01)) * 100,
+            'target1_change_pct': ((optimal['target1'] - original_target1) / max(original_target1, 0.01)) * 100,
+            'target2_change_pct': ((optimal['target2'] - original_target2) / max(original_target2, 0.01)) * 100,
             'any_change': False,
             'change_count': 0
         }
@@ -858,7 +794,6 @@ class AITradingBrain:
         trend = signals.get('trend_strength', 'NEUTRAL')
         confidence = signals.get('confidence', 50)
         
-        # Determine action priority
         if changes['any_change']:
             if changes['sl_changed'] and optimal['sl_reason'].startswith('Trail'):
                 action = 'TRAIL_SL'
@@ -876,7 +811,6 @@ class AITradingBrain:
             action = 'NO_CHANGE'
             priority = 'LOW'
         
-        # Generate summary message
         messages = []
         if changes['sl_changed']:
             direction = "up" if optimal['sl'] > original_sl else "down"
@@ -894,46 +828,28 @@ class AITradingBrain:
             'ticker': ticker,
             'position_type': position_type,
             'timestamp': datetime.now().isoformat(),
-            
-            # Current state
             'entry_price': entry_price,
             'current_price': current_price,
             'pnl_pct': pnl_pct,
-            
-            # Original levels
             'original_sl': original_sl,
             'original_target1': original_target1,
             'original_target2': original_target2,
-            
-            # New recommended levels
             'new_sl': optimal['sl'],
             'new_target1': optimal['target1'],
             'new_target2': optimal['target2'],
-            
-            # Reasons
             'sl_reason': optimal['sl_reason'],
             'target1_reason': optimal['target1_reason'],
             'target2_reason': optimal['target2_reason'],
-            
-            # Changes
             'changes': changes,
             'any_change': changes['any_change'],
-            
-            # Action
             'action': action,
             'priority': priority,
             'summary': summary,
-            
-            # Signals used
             'trend': trend,
             'confidence': confidence,
             'bullish_score': signals.get('bullish_score', 0),
             'bearish_score': signals.get('bearish_score', 0),
-            
-            # Full signals for reference
             'signals': signals,
-            
-            # Alert flag
             'should_alert': changes['any_change'] and priority in ['HIGH', 'MEDIUM']
         }
     
@@ -956,7 +872,10 @@ class AITradingBrain:
             'action': 'NO_CHANGE',
             'priority': 'LOW',
             'summary': reason,
-            'should_alert': False
+            'should_alert': False,
+            'pnl_pct': 0,
+            'trend': 'NEUTRAL',
+            'confidence': 0
         }
     
     def _log_decision(self, ticker: str, recommendation: Dict):
@@ -969,7 +888,6 @@ class AITradingBrain:
             'confidence': recommendation.get('confidence', 0)
         })
         
-        # Keep last 1000 decisions
         if len(self.decision_history) > 1000:
             self.decision_history = self.decision_history[-1000:]
 
@@ -977,13 +895,8 @@ class AITradingBrain:
 # ============================================================================
 # POSITION MONITOR - Continuous Monitoring
 # ============================================================================
-
 class PositionMonitor:
-    """
-    📊 Continuous Position Monitor
-    
-    Monitors all positions and triggers AI analysis
-    """
+    """📊 Continuous Position Monitor"""
     
     def __init__(self):
         self.brain = AITradingBrain()
@@ -996,53 +909,72 @@ class PositionMonitor:
         stock_data: Dict[str, pd.DataFrame],
         market_health: Optional[Dict] = None
     ) -> List[Dict]:
-        """
-        Monitor all positions and return AI recommendations
-        
-        Args:
-            portfolio: DataFrame with positions
-            stock_data: Dict of {ticker: DataFrame} with price data
-            market_health: Current market health
-        
-        Returns:
-            List of recommendations for each position
-        """
+        """Monitor all positions and return AI recommendations"""
         
         recommendations = []
         
+        if portfolio is None or portfolio.empty:
+            logger.warning("Empty portfolio provided")
+            return recommendations
+        
         for _, row in portfolio.iterrows():
-            ticker = str(row['Ticker']).strip()
+            ticker = str(row.get('Ticker', '')).strip()
             
-            # Get stock data
-            df = stock_data.get(ticker) or stock_data.get(f"{ticker}.NS")
+            if not ticker:
+                continue
             
-            if df is not None and not df.empty:
+            # Get stock data - TRY MULTIPLE FORMATS
+            df = None
+            ticker_variants = [ticker, f"{ticker}.NS", f"{ticker}.BO", ticker.upper(), ticker.lower()]
+            
+            for variant in ticker_variants:
+                if variant in stock_data:
+                    df = stock_data[variant]
+                    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+                        break
+                    else:
+                        df = None
+            
+            # ⚠️ THIS WAS THE BUG - FIXED NOW
+            # Skip if NO valid data (was backwards before!)
+            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                logger.warning(f"No valid data for {ticker}, skipping analysis")
                 continue
             
             try:
                 current_price = float(df['Close'].iloc[-1])
                 
+                # Get position details with safe defaults
+                position_type = str(row.get('Position', 'LONG')).upper().strip()
+                entry_price = float(row.get('Entry_Price', current_price))
+                stop_loss = float(row.get('Stop_Loss', entry_price * 0.95))
+                target1 = float(row.get('Target_1', entry_price * 1.05))
+                target2_val = row.get('Target_2')
+                target2 = float(target2_val) if target2_val and not pd.isna(target2_val) else target1 * 1.1
+                quantity = int(row.get('Quantity', 1))
+                
                 rec = self.brain.analyze_position(
                     ticker=ticker,
-                    position_type=str(row['Position']).upper().strip(),
-                    entry_price=float(row['Entry_Price']),
+                    position_type=position_type,
+                    entry_price=entry_price,
                     current_price=current_price,
-                    original_sl=float(row['Stop_Loss']),
-                    original_target1=float(row['Target_1']),
-                    original_target2=float(row.get('Target_2', row['Target_1'] * 1.1)),
-                    quantity=int(row.get('Quantity', 1)),
+                    original_sl=stop_loss,
+                    original_target1=target1,
+                    original_target2=target2,
+                    quantity=quantity,
                     df=df,
                     market_health=market_health
                 )
                 
                 recommendations.append(rec)
                 
-                # Store alert if needed
                 if rec.get('should_alert'):
                     self.alerts.append(rec)
             
             except Exception as e:
                 logger.error(f"Error analyzing {ticker}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
         return recommendations
     
@@ -1056,7 +988,6 @@ class PositionMonitor:
 # ============================================================================
 # GLOBAL INSTANCES
 # ============================================================================
-
 trading_brain = AITradingBrain()
 position_monitor = PositionMonitor()
 
@@ -1064,7 +995,6 @@ position_monitor = PositionMonitor()
 # ============================================================================
 # EASY-TO-USE FUNCTIONS
 # ============================================================================
-
 def analyze_single_position(
     ticker: str,
     position_type: str,
@@ -1076,26 +1006,7 @@ def analyze_single_position(
     df: pd.DataFrame,
     market_health: Optional[Dict] = None
 ) -> Dict:
-    """
-    Analyze a single position and get AI recommendation
-    
-    Usage:
-        result = analyze_single_position(
-            ticker="RELIANCE",
-            position_type="LONG",
-            entry_price=2500,
-            current_price=2650,
-            stop_loss=2400,
-            target1=2700,
-            target2=2900,
-            df=stock_df,
-            market_health=market_health
-        )
-        
-        if result['any_change']:
-            print(f"New SL: {result['new_sl']}")
-            print(f"New Target 1: {result['new_target1']}")
-    """
+    """Analyze a single position and get AI recommendation"""
     return trading_brain.analyze_position(
         ticker=ticker,
         position_type=position_type,
@@ -1115,9 +1026,7 @@ def analyze_portfolio(
     stock_data: Dict[str, pd.DataFrame],
     market_health: Optional[Dict] = None
 ) -> List[Dict]:
-    """
-    Analyze entire portfolio and get AI recommendations
-    """
+    """Analyze entire portfolio and get AI recommendations"""
     return position_monitor.monitor_all_positions(
         portfolio=portfolio,
         stock_data=stock_data,
@@ -1128,7 +1037,6 @@ def analyze_portfolio(
 # ============================================================================
 # TEST FUNCTION
 # ============================================================================
-
 def test_trading_brain():
     """Test the trading brain with sample data"""
     
@@ -1136,14 +1044,10 @@ def test_trading_brain():
     print("🧠 TESTING AI TRADING BRAIN")
     print("=" * 60)
     
-    # Create sample data
-    import numpy as np
-    
     dates = pd.date_range(end=datetime.now(), periods=100, freq='D')
     np.random.seed(42)
     
-    # Simulate uptrending stock
-    close = 1000 + np.cumsum(np.random.randn(100) * 20 + 1)  # Slight upward bias
+    close = 1000 + np.cumsum(np.random.randn(100) * 20 + 1)
     high = close + np.random.rand(100) * 20
     low = close - np.random.rand(100) * 20
     volume = np.random.randint(100000, 500000, 100)
@@ -1165,7 +1069,6 @@ def test_trading_brain():
     print(f"  Current: ₹{current_price:.2f}")
     print(f"  P&L: {((current_price - entry_price) / entry_price) * 100:.1f}%")
     
-    # Test analysis
     result = analyze_single_position(
         ticker="TEST",
         position_type="LONG",
@@ -1183,12 +1086,12 @@ def test_trading_brain():
     print(f"  Priority: {result['priority']}")
     print(f"  Summary: {result['summary']}")
     print(f"\n📊 New Levels:")
-    print(f"  SL: ₹{result['new_sl']:.2f} ({result['sl_reason']})")
-    print(f"  Target 1: ₹{result['new_target1']:.2f} ({result['target1_reason']})")
-    print(f"  Target 2: ₹{result['new_target2']:.2f} ({result['target2_reason']})")
+    print(f"  SL: ₹{result['new_sl']:.2f} ({result.get('sl_reason', 'N/A')})")
+    print(f"  Target 1: ₹{result['new_target1']:.2f} ({result.get('target1_reason', 'N/A')})")
+    print(f"  Target 2: ₹{result['new_target2']:.2f} ({result.get('target2_reason', 'N/A')})")
     print(f"\n📈 Analysis:")
-    print(f"  Trend: {result['trend']}")
-    print(f"  Confidence: {result['confidence']}%")
+    print(f"  Trend: {result.get('trend', 'N/A')}")
+    print(f"  Confidence: {result.get('confidence', 0)}%")
     print(f"  Changes Made: {result['any_change']}")
     
     print("\n" + "=" * 60)
