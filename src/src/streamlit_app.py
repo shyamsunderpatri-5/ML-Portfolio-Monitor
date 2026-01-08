@@ -2670,7 +2670,7 @@ def smart_analyze_position_with_data(df, ticker, position_type, entry_price, qua
     This is called by the parallel analyzer
     """
     
-    if df is None or df.empty:
+    if df is not None and not df.empty:
         return None
     
     try:
@@ -3058,7 +3058,7 @@ def smart_analyze_position(ticker, position_type, entry_price, quantity, stop_lo
     Accepts sidebar parameters for dynamic thresholds
     """
     df = get_stock_data_safe(ticker, period="6mo")
-    if df is None or df.empty:
+    if df is not None and not df.empty:
         return None
     
     try:
