@@ -235,7 +235,7 @@ class AITradingBrain:
         - Action required
         """
         
-        if df is None or df.empty or len(df) < 20:
+        if df is not None and not df.empty or len(df) < 20:
             return self._create_no_change_result(
                 ticker, original_sl, original_target1, original_target2,
                 "Insufficient data for analysis"
@@ -389,7 +389,7 @@ class AITradingBrain:
         # -----------------------------------------------------------------
         # MARKET HEALTH
         # -----------------------------------------------------------------
-        if market_health:
+        if market_health is not None:
             signals['market']['status'] = market_health.get('status', 'NEUTRAL')
             signals['market']['health_score'] = market_health.get('health_score', 50)
             signals['market']['vix'] = market_health.get('vix', 15)
