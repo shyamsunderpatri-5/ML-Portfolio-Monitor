@@ -2670,7 +2670,7 @@ def smart_analyze_position_with_data(df, ticker, position_type, entry_price, qua
     This is called by the parallel analyzer
     """
     
-    if df is not None and not df.empty:
+    if df is None or df.empty:
         return None
     
     try:
@@ -3058,7 +3058,7 @@ def smart_analyze_position(ticker, position_type, entry_price, quantity, stop_lo
     Accepts sidebar parameters for dynamic thresholds
     """
     df = get_stock_data_safe(ticker, period="6mo")
-    if df is not None and not df.empty:
+    if df is None or df.empty:
         return None
     
     try:
@@ -3595,7 +3595,7 @@ def validate_portfolio(df):
 # EMAIL ALERT FUNCTIONS
 # ============================================================================
 
-def should_send_email(alert, email_settings, result):
+def should_send_email(alert, email_settings, result, ai_enhanced=None):
     """
     Determine if email should be sent for this alert
     """
@@ -5315,7 +5315,7 @@ def main():
     
     st.divider()
     # =========================================================================
-    # AI LEVEL RECOMMENDATIONS (NEW SECTION)
+    # AI LEVEL RECOMMENDATIONS (FIXED VERSION)
     # =========================================================================
     
     if ai_updates_available and ai_recommendations:
@@ -5335,31 +5335,28 @@ def main():
                 auto_update = st.checkbox("Auto-update Sheet", value=False, key="auto_update_sheet")
             
             with col3:
-                apply_all = st.form_submit_button("📝  Apply All to Sheet", type="primary")
-                
-                try:
-                    from google_sheets_manager import update_portfolio_from_ai
-                    result = update_portfolio_from_ai(ai_recommendations)
-                    
-                    if result['updates_successful'] > 0:
-                        st.success(f"✅ Updated {result['updates_successful']} position(s) in Google Sheet!")
-                        st.balloons()
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.warning("⚠️ No updates applied. Check if Sheet API is configured.")
-                except Exception as e:
-                    st.error(f"❌ Update failed: {e}")
+                apply_all = st.form_submit_button("📝 Apply All to Sheet", type="primary")
+        
+        # ✅ FIXED: Only run when button is clicked
         if apply_all:
             try:
                 from google_sheets_manager import update_portfolio_from_ai
                 result = update_portfolio_from_ai(ai_recommendations)
+                
+                if result.get('updates_successful', 0) > 0:
+                    st.success(f"✅ Updated {result['updates_successful']} position(s) in Google Sheet!")
+                    st.balloons()
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.warning("⚠️ No updates applied. Check if Sheet API is configured.")
+            except ImportError:
+                st.error("❌ Google Sheets manager not available. Create `google_sheets_manager.py`")
             except Exception as e:
-                            st.error(f"❌ {e}")
-        
+                st.error(f"❌ Update failed: {e}")
         
         # Show each recommendation
-        for rec in updates_with_changes:
+        for idx, rec in enumerate(updates_with_changes):
             changes = rec.get('changes', {})
             priority_color = "#dc3545" if rec.get('priority') == 'HIGH' else "#ffc107"
             
@@ -5388,48 +5385,39 @@ def main():
                     sl_color = "green" if sl_change > 0 else "red" if sl_change < 0 else "gray"
                     st.markdown(f"**New SL:** <span style='color:{sl_color}; font-weight:bold;'>₹{rec['new_sl']:,.2f}</span> ({sl_change:+.1f}%)", 
                                unsafe_allow_html=True)
-                    st.caption(f"Reason: {rec['sl_reason']}")
+                    st.caption(f"Reason: {rec.get('sl_reason', 'N/A')}")
                     
                     # Target 1
                     t1_change = changes.get('target1_change_pct', 0)
                     t1_color = "green" if t1_change > 0 else "red" if t1_change < 0 else "gray"
                     st.markdown(f"**New T1:** <span style='color:{t1_color}; font-weight:bold;'>₹{rec['new_target1']:,.2f}</span> ({t1_change:+.1f}%)", 
                                unsafe_allow_html=True)
-                    st.caption(f"Reason: {rec['target1_reason']}")
+                    st.caption(f"Reason: {rec.get('target1_reason', 'N/A')}")
                     
                     # Target 2
                     t2_change = changes.get('target2_change_pct', 0)
                     t2_color = "green" if t2_change > 0 else "red" if t2_change < 0 else "gray"
                     st.markdown(f"**New T2:** <span style='color:{t2_color}; font-weight:bold;'>₹{rec['new_target2']:,.2f}</span> ({t2_change:+.1f}%)", 
                                unsafe_allow_html=True)
-                    st.caption(f"Reason: {rec['target2_reason']}")
+                    st.caption(f"Reason: {rec.get('target2_reason', 'N/A')}")
                 
                 # Analysis summary
                 st.divider()
                 st.markdown(f"**Trend:** {rec.get('trend', 'N/A')} | **Confidence:** {rec.get('confidence', 0)}%")
                 st.markdown(f"📊 Bullish Score: {rec.get('bullish_score', 0)} | Bearish Score: {rec.get('bearish_score', 0)}")
                 
-                # Individual update button
-                with st.form(key=f"apply_form_{rec['ticker']}", clear_on_submit=False):
-                    col1, col2 = st.columns([1, 1])
-                with col1:
-                    if st.form_submit_button(f"✅ Apply to {rec['ticker']}"):
-                        try:
-                            from google_sheets_manager import sheets_manager
-                            success = sheets_manager.update_position_levels(
-                                ticker=rec['ticker'],
-                                new_sl=rec['new_sl'],
-                                new_target1=rec['new_target1'],
-                                new_target2=rec['new_target2'],
-                                reason=rec['summary']
-                            )
-                            if success:
-                                st.success(f"✅ {rec['ticker']} updated!")
-                            else:
-                                st.warning("⚠️ Could not update. Sheet API may not be configured.")
-                        except Exception as e:
-                            st.error(f"❌ {e}")
-                if apply_btn:
+                # ✅ FIXED: Individual update button with proper form structure
+                with st.form(key=f"apply_form_{rec['ticker']}_{idx}", clear_on_submit=False):
+                    form_col1, form_col2 = st.columns([1, 1])
+                    
+                    with form_col1:
+                        apply_single = st.form_submit_button(f"✅ Apply to {rec['ticker']}", use_container_width=True)
+                    
+                    with form_col2:
+                        ignore_btn = st.form_submit_button("❌ Ignore", use_container_width=True)
+                
+                # Handle button clicks (outside form, but checking the variable)
+                if apply_single:
                     try:
                         from google_sheets_manager import sheets_manager
                         success = sheets_manager.update_position_levels(
@@ -5437,23 +5425,23 @@ def main():
                             new_sl=rec['new_sl'],
                             new_target1=rec['new_target1'],
                             new_target2=rec['new_target2'],
-                            reason=rec['summary']
+                            reason=rec.get('summary', 'AI recommendation')
                         )
                         if success:
                             st.success(f"✅ {rec['ticker']} updated!")
                             time.sleep(1)
-                            st.rerun() 
+                            st.rerun()
                         else:
-                                st.warning("⚠️ Could not update. Sheet API may not be configured.")
+                            st.warning("⚠️ Could not update. Sheet API may not be configured.")
+                    except ImportError:
+                        st.error("❌ Google Sheets manager not available")
                     except Exception as e:
-                            st.error(f"❌ {e}")
+                        st.error(f"❌ {e}")
                 
-                with col2:
-                   ignore_btn = st.form_submit_button("❌ Ignore")
                 if ignore_btn:
-                     st.info(f"Ignored {rec['ticker']} recommendation")
+                    st.info(f"Ignored {rec['ticker']} recommendation")
         
-        st.divider()    
+        st.divider()
 
     # =========================================================================
     # TAB STATE MANAGEMENT - FIXES PAGE RELOAD ISSUE
@@ -5830,7 +5818,7 @@ def main():
                 # Fetch fresh if no cached data
                 df = fetch_stock_data_optimized(selected_stock)
             
-            if df is not None and not df.empty:
+            if df is None or df.empty:
                 # Candlestick Chart
                 fig = go.Figure()
                 
