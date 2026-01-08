@@ -1016,7 +1016,7 @@ class PositionMonitor:
             # Get stock data
             df = stock_data.get(ticker) or stock_data.get(f"{ticker}.NS")
             
-            if df is None or df.empty:
+            if df is not None and not df.empty:
                 continue
             
             try:
