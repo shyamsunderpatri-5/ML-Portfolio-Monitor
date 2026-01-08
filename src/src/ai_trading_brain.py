@@ -923,6 +923,10 @@ class PositionMonitor:
             if not ticker:
                 continue
             
+            # 🔍 DEBUG: Print what keys are in stock_data
+            logger.info(f"Looking for ticker: '{ticker}'")
+            logger.info(f"Available keys in stock_data: {list(stock_data.keys())}")
+            
             # Get stock data - TRY MULTIPLE FORMATS
             df = None
             ticker_variants = [ticker, f"{ticker}.NS", f"{ticker}.BO", ticker.upper(), ticker.lower()]
