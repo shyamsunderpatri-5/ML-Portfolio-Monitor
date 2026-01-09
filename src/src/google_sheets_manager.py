@@ -44,7 +44,7 @@ except ImportError:
 
 SHEETS_CONFIG = {
     'sheet_id': '155htPsyom2e-dR5BZJx_cFzGxjQQjePJt3H2sRLSr6w',  # Your sheet ID
-    'main_sheet': 'Sheet1',  # Main positions sheet
+    'main_sheet': 'Portfolio',  # Main positions sheet
     'log_sheet': 'AI_Log',   # AI decisions log (create this sheet)
 }
 
