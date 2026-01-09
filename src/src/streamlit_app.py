@@ -4623,67 +4623,40 @@ def render_sidebar():
         # 🐂🐻 MARKET REGIME DETECTION (CORRECTED VERSION)
         # =====================================================================
         st.markdown("### 🐂🐻 Market Regime")
-        
-        if AI_FEATURES_AVAILABLE:
+
+        if AI_FEATURES_AVAILABLE and callable(globals().get("detect_market_regime")):
             try:
                 with st.spinner("Analyzing..."):
-                    # Fetch Nifty 50 data
-                    nifty = yf.Ticker('^NSEI')
-                    nifty_df = nifty.history(period='6mo')
-                    
+                    nifty = yf.Ticker("^NSEI")
+                    nifty_df = nifty.history(period="6mo")
+
                     if not nifty_df.empty and len(nifty_df) >= 60:
-                        # Detect regime using CORRECT function
                         regime_result = detect_market_regime(nifty_df)
-                        
-                        if regime_result and regime_result.get('status') == 'success':
-                            current_regime = regime_result.get('regime', 'UNKNOWN')
-                            confidence = regime_result.get('confidence', 0)
-                            
-                            # Display based on regime
-                            if current_regime == 'BULL':
-                                st.success("🐂 **BULLISH**")
-                                st.metric("Confidence", f"{confidence:.0f}%")
-                                st.info("""
-                                **Strategy:**
-                                ✅ Wider stops (5-7%)
-                                ✅ Let winners run
-                                ✅ Add to positions
-                                """)
-                                
-                            elif current_regime == 'BEAR':
-                                st.error("🐻 **BEARISH**")
-                                st.metric("Confidence", f"{confidence:.0f}%")
-                                st.warning("""
-                                **Strategy:**
-                                ⚠️ Tight stops (2-3%)
-                                ⚠️ Quick profits
-                                ⚠️ Reduce exposure
-                                """)
-                                
-                            else:  # SIDEWAYS
-                                st.info("↔️ **SIDEWAYS**")
-                                st.metric("Confidence", f"{confidence:.0f}%")
-                                st.caption("""
-                                **Strategy:**
-                                📊 Range trading
-                                📊 Quick targets
-                                📊 Tight stops
-                                """)
-                            
-                            # Store for use in analysis
-                            st.session_state['market_regime'] = current_regime
-                            st.session_state['regime_confidence'] = confidence
+
+                        if regime_result and regime_result.get("status") == "success":
+                            current_regime = regime_result.get("regime", "UNKNOWN")
+                            confidence = regime_result.get("confidence", 0)
+
+                            st.metric("Regime", current_regime)
+                            st.metric("Confidence", f"{confidence:.0f}%")
+
+                            st.session_state["market_regime"] = current_regime
+                            st.session_state["regime_confidence"] = confidence
                         else:
-                            st.warning("⚠️ Detection failed")
+                            st.warning("⚠️ Regime detection failed")
                     else:
                         st.warning("⚠️ Insufficient Nifty data")
-                        
+
             except Exception as e:
-                st.warning(f"⚠️ Error: {str(e)[:50]}")
+                st.warning(f"⚠️ Regime error: {str(e)}")
         else:
-            st.info("💡 Regime detection needs ai_features")
-        
+            st.info("💡 Market regime analysis unavailable")
+
         st.divider()
+
+
+ 
+
         # =====================================================================
         # ANALYSIS SETTINGS
         # =====================================================================
