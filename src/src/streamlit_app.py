@@ -59,8 +59,6 @@ import threading
 from functools import lru_cache
 import threading
 import time
-from ai_features import predict_next_day_lstm
-from ai_features import detect_market_regime
 import warnings
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore')
@@ -81,6 +79,19 @@ try:
     logger.info("✅ Loaded shared trading utilities")
 except ImportError:
     UTILS_IMPORTED = False
+
+# ============================================================================
+# AI FEATURES - CORRECT IMPORTS
+# ============================================================================
+AI_FEATURES_AVAILABLE = False
+try:
+    from ai_features import predict_price_lstm, detect_market_regime
+    AI_FEATURES_AVAILABLE = True
+    logger.info("✅ AI features (LSTM & Regime) loaded successfully")
+except ImportError as e:
+    AI_FEATURES_AVAILABLE = False
+    logger.warning(f"⚠️ AI features not available: {e}")
+
     # Functions will be defined inline below as fallback
 
 # ============================================================================
@@ -4609,79 +4620,70 @@ def render_sidebar():
         
         st.divider()
         # =====================================================================
-        # 🐂🐻 MARKET REGIME DETECTION (NEW!)
+        # 🐂🐻 MARKET REGIME DETECTION (CORRECTED VERSION)
         # =====================================================================
-        st.markdown("### 🐂🐻 Market Regime Detection")
+        st.markdown("### 🐂🐻 Market Regime")
         
-        try:
-            from ai_features import detect_market_regime
-            
-            # Detect regime for Nifty 50
-            with st.spinner("Analyzing market regime..."):
-                regime = detect_market_regime('^NSEI', period='6mo')
-                
-                if regime:
-                    current_regime = regime.get('current_regime', 'UNKNOWN')
-                    confidence = regime.get('confidence', 0)
+        if AI_FEATURES_AVAILABLE:
+            try:
+                with st.spinner("Analyzing..."):
+                    # Fetch Nifty 50 data
+                    nifty = yf.Ticker('^NSEI')
+                    nifty_df = nifty.history(period='6mo')
                     
-                    # Display regime with colors
-                    if current_regime == 'BULL':
-                        st.success(f"🐂 **BULLISH MARKET**")
-                        st.metric("Confidence", f"{confidence:.0f}%")
+                    if not nifty_df.empty and len(nifty_df) >= 60:
+                        # Detect regime using CORRECT function
+                        regime_result = detect_market_regime(nifty_df)
                         
-                        st.info("""
-                        **Bullish Strategy:**
-                        - ✅ Let winners run
-                        - ✅ Use wider stops (5-7%)
-                        - ✅ Consider adding to positions
-                        - ✅ Hold for bigger moves
-                        """)
+                        if regime_result and regime_result.get('status') == 'success':
+                            current_regime = regime_result.get('regime', 'UNKNOWN')
+                            confidence = regime_result.get('confidence', 0)
+                            
+                            # Display based on regime
+                            if current_regime == 'BULL':
+                                st.success("🐂 **BULLISH**")
+                                st.metric("Confidence", f"{confidence:.0f}%")
+                                st.info("""
+                                **Strategy:**
+                                ✅ Wider stops (5-7%)
+                                ✅ Let winners run
+                                ✅ Add to positions
+                                """)
+                                
+                            elif current_regime == 'BEAR':
+                                st.error("🐻 **BEARISH**")
+                                st.metric("Confidence", f"{confidence:.0f}%")
+                                st.warning("""
+                                **Strategy:**
+                                ⚠️ Tight stops (2-3%)
+                                ⚠️ Quick profits
+                                ⚠️ Reduce exposure
+                                """)
+                                
+                            else:  # SIDEWAYS
+                                st.info("↔️ **SIDEWAYS**")
+                                st.metric("Confidence", f"{confidence:.0f}%")
+                                st.caption("""
+                                **Strategy:**
+                                📊 Range trading
+                                📊 Quick targets
+                                📊 Tight stops
+                                """)
+                            
+                            # Store for use in analysis
+                            st.session_state['market_regime'] = current_regime
+                            st.session_state['regime_confidence'] = confidence
+                        else:
+                            st.warning("⚠️ Detection failed")
+                    else:
+                        st.warning("⚠️ Insufficient Nifty data")
                         
-                    elif current_regime == 'BEAR':
-                        st.error(f"🐻 **BEARISH MARKET**")
-                        st.metric("Confidence", f"{confidence:.0f}%")
-                        
-                        st.warning("""
-                        **Bearish Strategy:**
-                        - ⚠️ Tighten stops (2-3%)
-                        - ⚠️ Reduce position sizes
-                        - ⚠️ Take profits quickly
-                        - ⚠️ Avoid new long positions
-                        """)
-                        
-                    else:  # SIDEWAYS
-                        st.info(f"↔️ **SIDEWAYS MARKET**")
-                        st.metric("Confidence", f"{confidence:.0f}%")
-                        
-                        st.caption("""
-                        **Range-Bound Strategy:**
-                        - 📊 Trade the range
-                        - 📊 Quick profit targets (3-5%)
-                        - 📊 Tight stops (2-3%)
-                        - 📊 Avoid breakout trades
-                        """)
-                    
-                    # Show regime probabilities if available
-                    if 'regime_probs' in regime:
-                        with st.expander("📊 Regime Probabilities", expanded=False):
-                            probs = regime['regime_probs']
-                            for regime_type, prob in probs.items():
-                                st.progress(prob, text=f"{regime_type}: {prob*100:.0f}%")
-                    
-                    # Store in session state for use in main analysis
-                    st.session_state['market_regime'] = current_regime
-                    st.session_state['regime_confidence'] = confidence
-                else:
-                    st.warning("⚠️ Unable to detect market regime")
-                    st.caption("Using neutral settings")
+            except Exception as e:
+                st.warning(f"⚠️ Error: {str(e)[:50]}")
+        else:
+            st.info("💡 Regime detection needs ai_features")
         
-        except ImportError:
-            st.info("💡 Regime detection available - Install ai_features module")
-        except Exception as e:
-            st.warning(f"⚠️ Regime detection error: {str(e)}")
-            st.caption("Using neutral settings")
-        
-        st.divider()        
+        st.divider()
         # =====================================================================
         # ANALYSIS SETTINGS
         # =====================================================================
@@ -6100,15 +6102,12 @@ def main():
     if settings['email_settings']['enabled']:
         send_portfolio_alerts(results, settings['email_settings'], portfolio_risk)
     # =========================================================================
-    # 🔮 LSTM PRICE PREDICTIONS (NEW!)
+    # 🔮 LSTM PRICE PREDICTIONS (CORRECTED VERSION)
     # =========================================================================
     st.markdown("---")
     st.markdown("### 🔮 Tomorrow's AI Price Predictions (LSTM)")
     
-    # Check if ai_features is available
-    try:
-        from ai_features import predict_next_day_lstm
-        
+    if AI_FEATURES_AVAILABLE:
         # Create columns for predictions
         pred_cols = st.columns(min(len(portfolio), 4))  # Max 4 columns
         
@@ -6116,77 +6115,77 @@ def main():
             ticker = position['Ticker']
             current_price = position.get('Current_Price', 0)
             
-            # Use modulo to wrap to next row if more than 4 stocks
             col_idx = idx % 4
             
             with pred_cols[col_idx]:
-                with st.spinner(f"Predicting {ticker}..."):
-                    try:
-                        # Get prediction
-                        prediction = predict_next_day_lstm(ticker, period='3mo')
+                try:
+                    # Get stock data for this ticker
+                    ticker_symbol = f"{ticker}.NS" if '.NS' not in ticker else ticker
+                    
+                    # Check if we already have the data
+                    stock_data = None
+                    if 'all_stock_data' in locals() and ticker in all_stock_data:
+                        stock_data = all_stock_data[ticker]
+                    else:
+                        # Fetch fresh data for prediction
+                        with st.spinner(f"📊 {ticker}..."):
+                            stock_obj = yf.Ticker(ticker_symbol)
+                            stock_data = stock_obj.history(period='3mo')
+                    
+                    if stock_data is not None and not stock_data.empty and len(stock_data) >= 60:
+                        # Make prediction using the CORRECT function
+                        prediction = predict_price_lstm(stock_data, periods=1)
                         
-                        if prediction and prediction.get('predicted_price'):
-                            pred_price = prediction['predicted_price']
+                        if prediction and prediction.get('status') == 'success':
+                            pred_price = prediction.get('predicted_price', 0)
                             confidence = prediction.get('confidence', 0)
-                            direction = prediction.get('direction', '→')
                             
-                            # Calculate change
-                            if current_price > 0:
-                                change_pct = ((pred_price - current_price) / current_price) * 100
+                            if pred_price > 0:
+                                # Calculate change
+                                change_pct = ((pred_price - current_price) / current_price) * 100 if current_price > 0 else 0
+                                
+                                # Display prediction
+                                st.metric(
+                                    label=f"{ticker}",
+                                    value=f"₹{pred_price:.2f}",
+                                    delta=f"{change_pct:+.2f}%"
+                                )
+                                
+                                # Confidence indicator
+                                if confidence >= 70:
+                                    st.success(f"🎯 {confidence:.0f}%")
+                                elif confidence >= 50:
+                                    st.info(f"📊 {confidence:.0f}%")
+                                else:
+                                    st.warning(f"⚠️ {confidence:.0f}%")
                             else:
-                                change_pct = 0
-                            
-                            # Display prediction
-                            st.metric(
-                                label=f"{ticker} Tomorrow",
-                                value=f"₹{pred_price:.2f}",
-                                delta=f"{change_pct:+.2f}%"
-                            )
-                            
-                            # Show confidence with color
-                            if confidence >= 70:
-                                st.success(f"🎯 {confidence:.0f}% confidence")
-                            elif confidence >= 50:
-                                st.info(f"📊 {confidence:.0f}% confidence")
-                            else:
-                                st.warning(f"⚠️ {confidence:.0f}% confidence")
-                            
-                            # Trading suggestion
-                            if change_pct > 2 and confidence > 60:
-                                st.caption("💡 Bullish signal")
-                            elif change_pct < -2 and confidence > 60:
-                                st.caption("⚠️ Bearish signal")
-                            else:
-                                st.caption("➡️ Neutral")
+                                st.warning(f"⚠️ {ticker}")
+                                st.caption("Invalid prediction")
                         else:
-                            st.warning(f"⚠️ No prediction for {ticker}")
-                            st.caption("Needs more data")
-                    except Exception as e:
-                        st.error(f"❌ {ticker}")
-                        st.caption(f"Error: {str(e)[:30]}")
+                            st.info(f"📊 {ticker}")
+                            st.caption("Need more data")
+                    else:
+                        st.warning(f"⚠️ {ticker}")
+                        st.caption("Insufficient data")
+                        
+                except Exception as e:
+                    st.error(f"❌ {ticker}")
+                    st.caption(f"Error: {str(e)[:20]}")
         
-        # Add explanation
-        with st.expander("ℹ️ About LSTM Predictions", expanded=False):
+        # Add info
+        with st.expander("ℹ️ About LSTM", expanded=False):
             st.markdown("""
-            **How it works:**
-            - Analyzes last 60 days of price patterns
-            - Uses deep learning (LSTM neural network)
-            - Predicts tomorrow's closing price
-            
-            **Confidence levels:**
-            - 🎯 70%+: High confidence prediction
-            - 📊 50-70%: Medium confidence
-            - ⚠️ <50%: Low confidence, use caution
+            **LSTM Neural Network Predictions:**
+            - Analyzes 60+ days of price history
+            - Predicts next closing price
+            - Confidence shows prediction strength
             
             **Note:** Predictions are probabilistic, not guarantees!
             """)
+    else:
+        st.info("💡 LSTM predictions require ai_features module")
     
-    except ImportError:
-        st.info("💡 LSTM predictions available - ai_features module not found")
-    except Exception as e:
-        st.warning(f"⚠️ LSTM predictions unavailable: {str(e)}")
-    
-    st.markdown("---")    
+    st.markdown("---")
     # =========================================================================
     # DISPLAY SUMMARY CARDS
     # =========================================================================
