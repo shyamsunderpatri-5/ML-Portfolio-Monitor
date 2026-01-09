@@ -581,19 +581,44 @@ def get_rl_optimized_sl(
 
 
 # ============================================================================
-# 3. REAL SENTIMENT ANALYSIS WITH FINBERT
+# ============================================================================
+# 3. REAL SENTIMENT ANALYSIS WITH FINBERT (DYNAMIC VERSION)
 # ============================================================================
 
 class SentimentAnalyzer:
     """
     Financial sentiment analysis using FinBERT model
-    Analyzes news headlines to determine market sentiment
+    Dynamically fetches company info - NO HARDCODED TICKER MAPS
     """
     
     def __init__(self):
         self.model = None
         self.tokenizer = None
         self.is_loaded = False
+        
+        # Runtime cache to avoid repeated API calls
+        self._company_cache = {}
+        self._cache_file = 'company_cache.json'
+        self._load_cache()
+    
+    def _load_cache(self):
+        """Load company cache from file"""
+        try:
+            if os.path.exists(self._cache_file):
+                with open(self._cache_file, 'r') as f:
+                    self._company_cache = json.load(f)
+                logger.info(f"Loaded {len(self._company_cache)} cached company entries")
+        except Exception as e:
+            logger.warning(f"Could not load company cache: {e}")
+            self._company_cache = {}
+    
+    def _save_cache(self):
+        """Save company cache to file"""
+        try:
+            with open(self._cache_file, 'w') as f:
+                json.dump(self._company_cache, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Could not save company cache: {e}")
     
     def is_available(self) -> bool:
         """Check if transformers is available"""
@@ -621,8 +646,198 @@ class SentimentAnalyzer:
             logger.error(f"Failed to load FinBERT: {e}")
             return False
     
-    def _fetch_news(self, ticker: str, days: int = 7) -> List[Dict]:
-        """Fetch news articles for a ticker"""
+    def _extract_search_terms(self, company_name: str, ticker: str) -> List[str]:
+        """
+        Intelligently extract search terms from company name
+        
+        Examples:
+            "Apple Inc." -> ["Apple Inc", "Apple"]
+            "Tata Consultancy Services Limited" -> ["Tata Consultancy Services", "TCS", "Tata Consultancy"]
+            "HDFC Bank Limited" -> ["HDFC Bank", "HDFC"]
+        """
+        terms = []
+        
+        if not company_name:
+            return [ticker] if ticker else []
+        
+        # Add full name (cleaned)
+        clean_name = company_name.strip()
+        terms.append(clean_name)
+        
+        # Remove common suffixes and add that version
+        suffixes_to_remove = [
+            ' Limited', ' Ltd', ' Ltd.', ' Inc', ' Inc.', ' Corp', ' Corp.',
+            ' Corporation', ' Company', ' Co.', ' Co', ' LLC', ' LLP',
+            ' PLC', ' Plc', ' N.V.', ' S.A.', ' AG', ' SE',
+            ' Private Limited', ' Pvt Ltd', ' Pvt. Ltd.'
+        ]
+        
+        name_without_suffix = clean_name
+        for suffix in suffixes_to_remove:
+            if name_without_suffix.lower().endswith(suffix.lower()):
+                name_without_suffix = name_without_suffix[:-len(suffix)].strip()
+                break
+        
+        if name_without_suffix != clean_name:
+            terms.append(name_without_suffix)
+        
+        # Extract acronym if name has multiple words
+        words = name_without_suffix.split()
+        if len(words) >= 2:
+            # Try to create acronym
+            acronym = ''.join(word[0].upper() for word in words if word[0].isalpha())
+            if len(acronym) >= 2 and acronym != ticker:
+                terms.append(acronym)
+            
+            # Add first two words (often the "brand" name)
+            if len(words) >= 2:
+                brand_name = ' '.join(words[:2])
+                if brand_name not in terms:
+                    terms.append(brand_name)
+            
+            # Add just first word if it's substantial
+            if len(words[0]) >= 4:
+                terms.append(words[0])
+        
+        # Add ticker if not already present
+        if ticker and ticker.upper() not in [t.upper() for t in terms]:
+            terms.append(ticker.upper())
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_terms = []
+        for term in terms:
+            if term.lower() not in seen and len(term) >= 2:
+                seen.add(term.lower())
+                unique_terms.append(term)
+        
+        return unique_terms
+    
+    def _get_company_info_yfinance(self, ticker: str) -> Optional[Dict]:
+        """
+        Get company info from yfinance
+        """
+        try:
+            import yfinance as yf
+            
+            # Try different suffixes
+            suffixes = ['', '.NS', '.BO', '.L', '.TO', '.AX', '.HK']
+            
+            for suffix in suffixes:
+                try:
+                    symbol = f"{ticker}{suffix}"
+                    stock = yf.Ticker(symbol)
+                    info = stock.info
+                    
+                    # Check if we got valid data
+                    company_name = info.get('longName') or info.get('shortName')
+                    
+                    if company_name and len(company_name) > 1:
+                        # Extract search terms
+                        search_terms = self._extract_search_terms(company_name, ticker)
+                        
+                        return {
+                            'ticker': ticker,
+                            'symbol': symbol,
+                            'company_name': company_name,
+                            'short_name': info.get('shortName', ''),
+                            'search_terms': search_terms,
+                            'sector': info.get('sector', ''),
+                            'industry': info.get('industry', ''),
+                            'country': info.get('country', ''),
+                            'website': info.get('website', ''),
+                            'source': 'yfinance',
+                            'fetched_at': datetime.now().isoformat()
+                        }
+                except Exception as e:
+                    continue
+            
+            return None
+            
+        except ImportError:
+            logger.warning("yfinance not installed")
+            return None
+        except Exception as e:
+            logger.error(f"yfinance error: {e}")
+            return None
+    
+    def _get_company_info_fallback(self, ticker: str) -> Dict:
+        """
+        Fallback method when yfinance fails
+        Uses basic heuristics to create search terms
+        """
+        # Try to make the ticker more readable
+        # e.g., "TATAMOTORS" -> "Tata Motors"
+        readable_name = ticker
+        
+        # Common patterns in Indian stock tickers
+        known_patterns = {
+            'BANK': ' Bank',
+            'STEEL': ' Steel',
+            'PHARMA': ' Pharma',
+            'AUTO': ' Auto',
+            'MOTORS': ' Motors',
+            'TECH': ' Tech',
+            'INFRA': ' Infra',
+            'POWER': ' Power',
+            'CEMENT': ' Cement',
+            'PETRO': ' Petro',
+        }
+        
+        for pattern, replacement in known_patterns.items():
+            if pattern in ticker.upper():
+                parts = ticker.upper().split(pattern)
+                if parts[0]:
+                    readable_name = parts[0].title() + replacement
+                    break
+        
+        return {
+            'ticker': ticker,
+            'symbol': ticker,
+            'company_name': readable_name,
+            'search_terms': [readable_name, ticker],
+            'sector': '',
+            'industry': '',
+            'source': 'fallback',
+            'warning': 'Could not fetch company info. Using ticker as search term.',
+            'fetched_at': datetime.now().isoformat()
+        }
+    
+    def _get_company_info(self, ticker: str) -> Dict:
+        """
+        Get company info - tries cache first, then yfinance, then fallback
+        """
+        clean_ticker = ticker.upper().replace('.NS', '').replace('.BO', '').replace('.L', '')
+        
+        # Check cache first
+        if clean_ticker in self._company_cache:
+            cached = self._company_cache[clean_ticker]
+            # Check if cache is fresh (less than 7 days old)
+            try:
+                cached_time = datetime.fromisoformat(cached.get('fetched_at', '2000-01-01'))
+                if datetime.now() - cached_time < timedelta(days=7):
+                    cached['source'] = 'cache'
+                    return cached
+            except:
+                pass
+        
+        # Try yfinance
+        info = self._get_company_info_yfinance(clean_ticker)
+        
+        if info:
+            # Save to cache
+            self._company_cache[clean_ticker] = info
+            self._save_cache()
+            return info
+        
+        # Fallback
+        fallback_info = self._get_company_info_fallback(clean_ticker)
+        return fallback_info
+    
+    def _fetch_news(self, company_info: Dict, days: int = 7) -> List[Dict]:
+        """
+        Fetch news articles using multiple search strategies
+        """
         if not AI_CONFIG['news_api_key']:
             logger.warning("News API key not configured")
             return []
@@ -630,46 +845,191 @@ class SentimentAnalyzer:
         try:
             import requests
             
-            # Map common tickers to search terms
-            search_terms = {
-                'RELIANCE': 'Reliance Industries',
-                'TCS': 'Tata Consultancy Services',
-                'INFY': 'Infosys',
-                'HDFCBANK': 'HDFC Bank',
-                'ICICIBANK': 'ICICI Bank',
-                'SBIN': 'State Bank of India',
-                'TATAMOTORS': 'Tata Motors',
-                'MARUTI': 'Maruti Suzuki',
-            }
-            
-            query = search_terms.get(ticker.upper().replace('.NS', ''), ticker)
+            all_articles = []
+            company_name = company_info['company_name']
+            search_terms = company_info.get('search_terms', [company_name])
             
             url = "https://newsapi.org/v2/everything"
-            params = {
-                'q': f'"{query}" stock OR shares',
-                'apiKey': AI_CONFIG['news_api_key'],
-                'pageSize': 20,
-                'language': 'en',
-                'sortBy': 'publishedAt',
-                'from': (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            }
+            from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             
-            response = requests.get(url, params=params, timeout=10)
-            data = response.json()
+            # Strategy 1: Exact company name + stock context
+            queries = [
+                f'"{company_name}" AND (stock OR shares OR earnings OR market)',
+                f'"{company_name}" stock',
+            ]
             
-            if data.get('status') == 'ok':
-                return data.get('articles', [])
-            else:
-                logger.warning(f"News API error: {data.get('message')}")
-                return []
+            # Strategy 2: Add first search term if different
+            if len(search_terms) > 1 and search_terms[1] != company_name:
+                queries.append(f'"{search_terms[1]}" stock')
+            
+            for query in queries:
+                try:
+                    params = {
+                        'q': query,
+                        'apiKey': AI_CONFIG['news_api_key'],
+                        'pageSize': 30,
+                        'language': 'en',
+                        'sortBy': 'relevancy',
+                        'from': from_date
+                    }
+                    
+                    response = requests.get(url, params=params, timeout=10)
+                    data = response.json()
+                    
+                    if data.get('status') == 'ok':
+                        articles = data.get('articles', [])
+                        all_articles.extend(articles)
+                        
+                        # If we got enough articles, stop searching
+                        if len(all_articles) >= 15:
+                            break
+                
+                except Exception as e:
+                    logger.warning(f"News fetch failed for query '{query}': {e}")
+                    continue
+            
+            # Deduplicate articles by URL
+            seen_urls = set()
+            unique_articles = []
+            for article in all_articles:
+                url = article.get('url', '')
+                if url and url not in seen_urls:
+                    seen_urls.add(url)
+                    unique_articles.append(article)
+            
+            return unique_articles
         
         except Exception as e:
             logger.error(f"Failed to fetch news: {e}")
             return []
     
+    def _calculate_relevance_score(
+        self, 
+        article: Dict, 
+        company_info: Dict
+    ) -> Tuple[float, List[str]]:
+        """
+        Calculate how relevant an article is to the company
+        Uses fuzzy matching for better accuracy
+        """
+        title = (article.get('title') or '').lower()
+        description = (article.get('description') or '').lower()
+        content = (article.get('content') or '').lower()
+        
+        full_text = f"{title} {description} {content}"
+        
+        # Skip very short or empty articles
+        if len(full_text) < 50:
+            return 0, []
+        
+        search_terms = company_info.get('search_terms', [])
+        ticker = company_info.get('ticker', '').lower()
+        company_name = company_info.get('company_name', '').lower()
+        
+        matched_terms = []
+        score = 0
+        
+        # Check for exact company name match (highest weight)
+        if company_name and company_name in full_text:
+            score += 50
+            matched_terms.append(f"Company: {company_name}")
+        else:
+            # Try partial matching for company name
+            name_words = company_name.split()
+            if len(name_words) >= 2:
+                # Check if first two significant words appear together
+                significant_words = [w for w in name_words if len(w) > 2][:2]
+                if len(significant_words) >= 2:
+                    if all(word in full_text for word in significant_words):
+                        score += 35
+                        matched_terms.append(f"Partial: {' '.join(significant_words)}")
+        
+        # Check for ticker symbol (with word boundaries)
+        import re
+        if ticker and len(ticker) >= 2:
+            # Match ticker as standalone word or in common patterns like $AAPL, (AAPL)
+            ticker_patterns = [
+                rf'\b{re.escape(ticker)}\b',
+                rf'\${re.escape(ticker)}\b',
+                rf'\({re.escape(ticker)}\)',
+            ]
+            for pattern in ticker_patterns:
+                if re.search(pattern, full_text, re.IGNORECASE):
+                    score += 30
+                    matched_terms.append(f"Ticker: {ticker}")
+                    break
+        
+        # Check for other search terms
+        for term in search_terms:
+            term_lower = term.lower()
+            if len(term_lower) >= 3 and term_lower in full_text:
+                if term_lower not in [m.lower() for m in matched_terms]:
+                    score += 15
+                    matched_terms.append(f"Term: {term}")
+        
+        # Check for financial context
+        financial_terms = [
+            'stock', 'shares', 'earnings', 'revenue', 'profit', 'loss',
+            'quarterly', 'annual', 'dividend', 'investor', 'market cap',
+            'trading', 'ipo', 'acquisition', 'merger', 'ceo', 'quarterly results'
+        ]
+        
+        # Also check for Indian market terms
+        indian_terms = ['nse', 'bse', 'sensex', 'nifty', 'sebi', 'rupee', 'crore', 'lakh']
+        
+        all_financial = financial_terms + indian_terms
+        financial_matches = sum(1 for term in all_financial if term in full_text)
+        
+        if financial_matches > 0:
+            bonus = min(20, financial_matches * 4)
+            score += bonus
+            if financial_matches >= 2:
+                matched_terms.append(f"Financial context ({financial_matches} terms)")
+        
+        # Penalties
+        # Very generic articles
+        generic_indicators = ['horoscope', 'weather', 'recipe', 'celebrity', 'sports score']
+        if any(ind in full_text for ind in generic_indicators):
+            score -= 30
+        
+        # Title doesn't mention company at all (likely not relevant)
+        if company_name and company_name not in title.lower():
+            # Check if any search term is in title
+            title_has_term = any(term.lower() in title.lower() for term in search_terms)
+            if not title_has_term:
+                score -= 15
+        
+        return max(0, min(100, score)), matched_terms
+    
+    def _filter_relevant_articles(
+        self, 
+        articles: List[Dict], 
+        company_info: Dict,
+        min_relevance: float = 35.0
+    ) -> List[Dict]:
+        """
+        Filter articles by relevance score
+        """
+        relevant_articles = []
+        
+        for article in articles:
+            relevance_score, matched_terms = self._calculate_relevance_score(
+                article, company_info
+            )
+            
+            if relevance_score >= min_relevance:
+                article['relevance_score'] = relevance_score
+                article['matched_terms'] = matched_terms
+                relevant_articles.append(article)
+        
+        # Sort by relevance score
+        relevant_articles.sort(key=lambda x: x['relevance_score'], reverse=True)
+        
+        return relevant_articles
+    
     def analyze(self, ticker: str) -> Optional[Dict]:
         """
-        Analyze sentiment for a ticker
+        Analyze sentiment for a ticker with relevance filtering
         
         Args:
             ticker: Stock ticker symbol
@@ -684,6 +1044,12 @@ class SentimentAnalyzer:
                 'sentiment': None
             }
         
+        # Get company info DYNAMICALLY
+        company_info = self._get_company_info(ticker)
+        
+        logger.info(f"Analyzing sentiment for {ticker} -> {company_info['company_name']}")
+        logger.info(f"Search terms: {company_info.get('search_terms', [])}")
+        
         # Load model
         if not self._load_model():
             return {
@@ -693,13 +1059,32 @@ class SentimentAnalyzer:
             }
         
         # Fetch news
-        articles = self._fetch_news(ticker)
+        all_articles = self._fetch_news(company_info)
         
-        if not articles:
+        if not all_articles:
             return {
                 'status': 'warning',
-                'message': 'No news articles found',
+                'message': f'No news articles found for {company_info["company_name"]}',
+                'ticker': ticker,
+                'company_name': company_info['company_name'],
+                'search_terms': company_info.get('search_terms', []),
                 'sentiment': None
+            }
+        
+        # Filter for relevant articles
+        relevant_articles = self._filter_relevant_articles(all_articles, company_info)
+        
+        if not relevant_articles:
+            return {
+                'status': 'warning',
+                'message': f'Found {len(all_articles)} articles but none were relevant to {company_info["company_name"]}',
+                'ticker': ticker,
+                'company_name': company_info['company_name'],
+                'search_terms': company_info.get('search_terms', []),
+                'articles_fetched': len(all_articles),
+                'articles_relevant': 0,
+                'sentiment': None,
+                'suggestion': 'Try a more common ticker or check if the company name is correct'
             }
         
         try:
@@ -708,47 +1093,63 @@ class SentimentAnalyzer:
             sentiments = []
             analyzed_headlines = []
             
-            for article in articles[:15]:  # Analyze up to 15 articles
+            for article in relevant_articles[:15]:
                 headline = article.get('title', '')
-                if not headline or len(headline) < 10:
+                description = article.get('description', '')
+                
+                # Combine headline and description for context
+                text_to_analyze = headline
+                if description and len(description) > 20:
+                    text_to_analyze = f"{headline}. {description[:200]}"
+                
+                if not text_to_analyze or len(text_to_analyze) < 10:
                     continue
                 
                 # Tokenize and predict
                 inputs = self.tokenizer(
-                    headline, 
+                    text_to_analyze, 
                     return_tensors="pt", 
                     padding=True, 
                     truncation=True,
-                    max_length=128
+                    max_length=256
                 )
                 
                 with torch.no_grad():
                     outputs = self.model(**inputs)
                     predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
                 
-                # FinBERT outputs: [negative, neutral, positive]
                 neg_score = predictions[0][0].item()
                 neu_score = predictions[0][1].item()
                 pos_score = predictions[0][2].item()
                 
-                # Calculate composite score (-100 to +100)
                 sentiment_score = (pos_score - neg_score) * 100
-                sentiments.append(sentiment_score)
+                
+                # Weight by relevance
+                relevance = article.get('relevance_score', 50) / 100
+                weighted_score = sentiment_score * (0.5 + 0.5 * relevance)
+                
+                sentiments.append(weighted_score)
                 
                 analyzed_headlines.append({
                     'headline': headline[:100] + '...' if len(headline) > 100 else headline,
-                    'score': sentiment_score,
-                    'positive': pos_score,
-                    'negative': neg_score,
-                    'neutral': neu_score,
+                    'score': round(sentiment_score, 1),
+                    'weighted_score': round(weighted_score, 1),
+                    'relevance': round(article.get('relevance_score', 0), 1),
+                    'matched_terms': article.get('matched_terms', []),
+                    'positive': round(pos_score * 100, 1),
+                    'negative': round(neg_score * 100, 1),
+                    'neutral': round(neu_score * 100, 1),
                     'source': article.get('source', {}).get('name', 'Unknown'),
-                    'date': article.get('publishedAt', '')[:10]
+                    'date': article.get('publishedAt', '')[:10],
+                    'url': article.get('url', '')
                 })
             
             if not sentiments:
                 return {
                     'status': 'warning',
                     'message': 'Could not analyze any headlines',
+                    'ticker': ticker,
+                    'company_name': company_info['company_name'],
                     'sentiment': None
                 }
             
@@ -756,46 +1157,151 @@ class SentimentAnalyzer:
             avg_sentiment = np.mean(sentiments)
             sentiment_std = np.std(sentiments)
             
-            if avg_sentiment > 25:
+            # Determine sentiment type
+            if avg_sentiment > 30:
                 sentiment_type = "BULLISH"
                 color = "#28a745"
-            elif avg_sentiment > 10:
+                emoji = "🟢"
+            elif avg_sentiment > 15:
                 sentiment_type = "SLIGHTLY_BULLISH"
                 color = "#7cb342"
-            elif avg_sentiment < -25:
+                emoji = "🟡"
+            elif avg_sentiment < -30:
                 sentiment_type = "BEARISH"
                 color = "#dc3545"
-            elif avg_sentiment < -10:
+                emoji = "🔴"
+            elif avg_sentiment < -15:
                 sentiment_type = "SLIGHTLY_BEARISH"
                 color = "#f57c00"
+                emoji = "🟠"
             else:
                 sentiment_type = "NEUTRAL"
                 color = "#ffc107"
+                emoji = "⚪"
             
-            # Confidence based on consistency
-            confidence = max(0, min(100, int(100 - sentiment_std)))
+            # Calculate confidence
+            avg_relevance = np.mean([a.get('relevance', 50) for a in analyzed_headlines])
+            article_count_factor = min(1.0, len(sentiments) / 10)
+            consistency_factor = max(0, 1 - (sentiment_std / 50))
+            relevance_factor = avg_relevance / 100
+            
+            confidence = int(
+                (article_count_factor * 30 + 
+                 consistency_factor * 40 + 
+                 relevance_factor * 30)
+            )
             
             return {
                 'status': 'success',
                 'ticker': ticker,
+                'company_name': company_info['company_name'],
+                'search_terms_used': company_info.get('search_terms', []),
+                'company_source': company_info.get('source', 'unknown'),
+                'sector': company_info.get('sector', ''),
+                'industry': company_info.get('industry', ''),
                 'score': round(avg_sentiment, 1),
                 'type': sentiment_type,
+                'emoji': emoji,
                 'color': color,
                 'confidence': confidence,
+                'confidence_breakdown': {
+                    'article_count': round(article_count_factor * 100, 1),
+                    'consistency': round(consistency_factor * 100, 1),
+                    'relevance': round(relevance_factor * 100, 1)
+                },
+                'articles_fetched': len(all_articles),
+                'articles_relevant': len(relevant_articles),
                 'articles_analyzed': len(sentiments),
-                'headlines': analyzed_headlines[:5],  # Top 5
-                'summary': f"Analyzed {len(sentiments)} articles. Overall: {sentiment_type}",
+                'avg_relevance': round(avg_relevance, 1),
+                'sentiment_std': round(sentiment_std, 1),
+                'headlines': analyzed_headlines[:5],
+                'all_headlines': analyzed_headlines,
+                'summary': f"{emoji} {sentiment_type}: Analyzed {len(sentiments)} relevant articles for {company_info['company_name']}",
                 'generated_at': datetime.now().isoformat(),
-                'source': 'FinBERT + NewsAPI'
+                'source': 'FinBERT + NewsAPI (dynamic company lookup)',
+                'warnings': [company_info.get('warning')] if company_info.get('warning') else []
             }
         
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
+            import traceback
             return {
                 'status': 'error',
                 'message': str(e),
+                'traceback': traceback.format_exc(),
                 'sentiment': None
             }
+    
+    def clear_cache(self):
+        """Clear the company info cache"""
+        self._company_cache = {}
+        if os.path.exists(self._cache_file):
+            os.remove(self._cache_file)
+        logger.info("Company cache cleared")
+    
+    def get_cache_stats(self) -> Dict:
+        """Get cache statistics"""
+        return {
+            'cached_companies': len(self._company_cache),
+            'cache_file': self._cache_file,
+            'companies': list(self._company_cache.keys())
+        }
+
+
+# Global instance
+sentiment_analyzer = SentimentAnalyzer()
+
+
+def get_real_sentiment(ticker: str) -> Optional[Dict]:
+    """
+    Get sentiment analysis for any ticker (dynamically fetches company info)
+    
+    Usage:
+        result = get_real_sentiment("AAPL")
+        result = get_real_sentiment("RELIANCE")
+        result = get_real_sentiment("RANDOMTICKER123")  # Will try to fetch info
+    """
+    return sentiment_analyzer.analyze(ticker)
+
+
+# ============================================================================
+# HELPER: Test the dynamic lookup
+# ============================================================================
+
+def test_company_lookup(tickers: List[str] = None):
+    """
+    Test the dynamic company lookup for various tickers
+    """
+    if tickers is None:
+        tickers = [
+            'AAPL', 'MSFT', 'GOOGL',  # US stocks
+            'RELIANCE', 'TCS', 'INFY',  # Indian stocks
+            'CLEAN', 'CLNE', 'TSLA',  # Various
+            'RANDOMXYZ',  # Unknown ticker
+        ]
+    
+    print("=" * 70)
+    print("🔍 TESTING DYNAMIC COMPANY LOOKUP")
+    print("=" * 70)
+    
+    for ticker in tickers:
+        info = sentiment_analyzer._get_company_info(ticker)
+        print(f"\n📊 {ticker}:")
+        print(f"   Company: {info.get('company_name', 'N/A')}")
+        print(f"   Search terms: {info.get('search_terms', [])}")
+        print(f"   Source: {info.get('source', 'N/A')}")
+        if info.get('sector'):
+            print(f"   Sector: {info.get('sector')}")
+        if info.get('warning'):
+            print(f"   ⚠️ Warning: {info.get('warning')}")
+    
+    print("\n" + "=" * 70)
+    print(f"✅ Cache now has {len(sentiment_analyzer._company_cache)} entries")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    test_company_lookup()
 
 
 # Global sentiment analyzer instance
@@ -1864,4 +2370,3 @@ __all__ = [
     'rl_optimizer',
     'AVAILABLE_FEATURES',
 ]
-
