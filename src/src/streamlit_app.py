@@ -4932,7 +4932,6 @@ def render_sidebar():
                 st.write(f"Email cooldown: {email_settings['cooldown']} min")
             
             # Email log
-                        # Email log
             if st.session_state.email_log:
                 st.markdown("**Recent Email Log:**")
                 for log_entry in st.session_state.email_log[-5:]:
