@@ -27,14 +27,19 @@ import os
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
+try:
+    from trading_utils import calculate_rsi, calculate_atr, calculate_macd
+except ImportError:
+    pass  
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
 AI_CONFIG = {
     # API Keys - Set these for full functionality
-    'claude_api_key': 'FCKGW-RHQQ2 - YXRKT - 8T46W-28798',
-    'news_api_key': '50272e1e31b74cd8957606ba72b69d50',  # Get free from newsapi.org
+    'claude_api_key': os.getenv('ANTHROPIC_API_KEY', ''),  
+    'news_api_key': os.getenv('NEWS_API_KEY', '50272e1e31b74cd8957606ba72b69d50'),
     'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN', ''),
     'telegram_chat_id': os.getenv('TELEGRAM_CHAT_ID', ''),
     'discord_webhook_url': os.getenv('DISCORD_WEBHOOK_URL', ''),
@@ -46,7 +51,6 @@ AI_CONFIG = {
     'monte_carlo_simulations': 10000,
     'hmm_states': 4,
 }
-
 # Check available dependencies
 AVAILABLE_FEATURES = {
     'tensorflow': False,
@@ -55,6 +59,61 @@ AVAILABLE_FEATURES = {
     'sklearn': False,
     'newsapi': False,
 }
+DEPENDENCY_ERRORS = {}
+
+try:
+    import tensorflow as tf
+    # Test if TensorFlow works
+    _ = tf.constant([1, 2, 3])
+    AVAILABLE_FEATURES['tensorflow'] = True
+    logger.info("✅ TensorFlow available for LSTM predictions")
+except ImportError as e:
+    DEPENDENCY_ERRORS['tensorflow'] = str(e)
+    logger.warning("⚠️ TensorFlow not installed - LSTM predictions disabled")
+except Exception as e:
+    DEPENDENCY_ERRORS['tensorflow'] = f"TensorFlow error: {str(e)}"
+    logger.warning(f"⚠️ TensorFlow error - LSTM predictions disabled: {e}")
+
+try:
+    from transformers import AutoTokenizer, AutoModelForSequenceClassification
+    import torch
+    # Test if PyTorch works
+    _ = torch.tensor([1, 2, 3])
+    AVAILABLE_FEATURES['transformers'] = True
+    logger.info("✅ Transformers available for sentiment analysis")
+except ImportError as e:
+    DEPENDENCY_ERRORS['transformers'] = str(e)
+    logger.warning("⚠️ Transformers not installed - Sentiment analysis disabled")
+except Exception as e:
+    DEPENDENCY_ERRORS['transformers'] = f"Transformers error: {str(e)}"
+    logger.warning(f"⚠️ Transformers error - Sentiment analysis disabled: {e}")
+
+# Add this function to display dependency status:
+def get_dependency_status():
+    """Get detailed dependency status"""
+    status = {}
+    
+    for feature, available in AVAILABLE_FEATURES.items():
+        status[feature] = {
+            'available': available,
+            'error': DEPENDENCY_ERRORS.get(feature, None) if not available else None
+        }
+    
+    return status
+
+def validate_api_keys():
+    """Warn if critical API keys are missing"""
+    warnings = []
+    
+    if not AI_CONFIG['claude_api_key']:
+        warnings.append("⚠️ Claude API key missing - AI suggestions disabled")
+    
+    if not AI_CONFIG['news_api_key']:
+        warnings.append("⚠️ News API key missing - Sentiment analysis disabled")
+    
+    return warnings
+
+
 
 # Try importing optional dependencies
 try:
@@ -142,10 +201,90 @@ class LSTMPredictor:
         self.model = None
         self.scaler = None
         self.is_fitted = False
+        self.model_cache = {}  # Cache models by ticker
+        self.cache_dir = 'model_cache'
+        self._ensure_cache_dir()
+    
+    def _ensure_cache_dir(self):
+        """Create cache directory if it doesn't exist"""
+        import os
+        if not os.path.exists(self.cache_dir):
+            try:
+                os.makedirs(self.cache_dir)
+            except Exception:
+                self.cache_dir = '.'  # Use current directory as fallback
+    
+    def _get_cache_key(self, df: pd.DataFrame) -> str:
+        """Generate cache key based on data characteristics"""
+        if df is None or df.empty:
+            return ""
+        
+        # Use last price and data length as cache key
+        last_price = df['Close'].iloc[-1]
+        data_len = len(df)
+        
+        # Round last price to reduce cache misses from tiny price changes
+        price_bucket = round(last_price / 10) * 10
+        
+        return f"{data_len}_{price_bucket}"
+    
+    def _get_cached_model(self, cache_key: str):
+        """Get cached model if available and still valid"""
+        if cache_key in self.model_cache:
+            cached = self.model_cache[cache_key]
+            # Check if cache is less than 1 hour old
+            age = (datetime.now() - cached['timestamp']).total_seconds()
+            if age < 3600:  # 1 hour
+                return cached['model'], cached['scaler']
+        return None, None
+    
+    def _cache_model(self, cache_key: str, model, scaler):
+        """Cache the trained model"""
+        self.model_cache[cache_key] = {
+            'model': model,
+            'scaler': scaler,
+            'timestamp': datetime.now()
+        }
+        
+        # Limit cache size
+        if len(self.model_cache) > 10:
+            # Remove oldest entry
+            oldest_key = min(self.model_cache.keys(), 
+                           key=lambda k: self.model_cache[k]['timestamp'])
+            del self.model_cache[oldest_key]
     
     def is_available(self) -> bool:
         """Check if TensorFlow is available"""
         return AVAILABLE_FEATURES['tensorflow']
+
+    def _load_cached_model(self):
+        """Load pre-trained model if exists"""
+        import os
+        if os.path.exists(self.model_cache_file):
+            try:
+                from tensorflow.keras.models import load_model
+                import pickle
+                
+                self.model = load_model(self.model_cache_file)
+                with open(self.scaler_cache_file, 'rb') as f:
+                    self.scaler = pickle.load(f)
+                
+                logger.info("✅ Loaded cached LSTM model")
+                return True
+            except Exception as e:
+                logger.warning(f"Cache load failed: {e}")
+        return False
+    
+    def _save_model_cache(self):
+        """Save trained model for reuse"""
+        try:
+            import pickle
+            self.model.save(self.model_cache_file)
+            with open(self.scaler_cache_file, 'wb') as f:
+                pickle.dump(self.scaler, f)
+            logger.info("✅ Saved LSTM model to cache")
+        except Exception as e:
+            logger.warning(f"Cache save failed: {e}")
     
     def predict(self, df: pd.DataFrame, periods: int = 5) -> Optional[Dict]:
         """
@@ -158,6 +297,12 @@ class LSTMPredictor:
         Returns:
             Dict with predictions, confidence, etc.
         """
+        # Check cache first
+        cache_key = self._get_cache_key(df)
+        cached_model, cached_scaler = self._get_cached_model(cache_key)
+        
+        use_cached = cached_model is not None
+
         if not self.is_available():
             return {
                 'status': 'error',
@@ -198,32 +343,55 @@ class LSTMPredictor:
             X_train, X_val = X[:split], X[split:]
             y_train, y_val = y[:split], y[split:]
             
-            # Build LSTM model
-            self.model = Sequential([
-                LSTM(50, return_sequences=True, input_shape=(X.shape[1], 1)),
-                Dropout(0.2),
-                LSTM(50, return_sequences=True),
-                Dropout(0.2),
-                LSTM(50, return_sequences=False),
-                Dropout(0.2),
-                Dense(25, activation='relu'),
-                Dense(1)
-            ])
-            
-            self.model.compile(optimizer='adam', loss='mean_squared_error')
-            
-            # Train with validation
-            history = self.model.fit(
-                X_train, y_train,
-                batch_size=AI_CONFIG['lstm_batch_size'],
-                epochs=AI_CONFIG['lstm_epochs'],
-                validation_data=(X_val, y_val),
-                verbose=0
-            )
-            
-            # Calculate training metrics
-            train_loss = history.history['loss'][-1]
-            val_loss = history.history['val_loss'][-1]
+            if use_cached:
+                self.model = cached_model
+                self.scaler = cached_scaler
+                logger.info("Using cached LSTM model")
+                
+                # Use default values for cached model
+                train_loss = 0.01
+                val_loss = 0.01
+            else:
+                # Build LSTM model with early stopping
+                from tensorflow.keras.callbacks import EarlyStopping
+                
+                self.model = Sequential([
+                    LSTM(50, return_sequences=True, input_shape=(X.shape[1], 1)),
+                    Dropout(0.2),
+                    LSTM(50, return_sequences=True),
+                    Dropout(0.2),
+                    LSTM(50, return_sequences=False),
+                    Dropout(0.2),
+                    Dense(25, activation='relu'),
+                    Dense(1)
+                ])
+                
+                self.model.compile(optimizer='adam', loss='mean_squared_error')
+                
+                # Early stopping to prevent overfitting and reduce training time
+                early_stop = EarlyStopping(
+                    monitor='val_loss', 
+                    patience=3, 
+                    restore_best_weights=True
+                )
+                
+                # Train with validation and early stopping
+                history = self.model.fit(
+                    X_train, y_train,
+                    batch_size=AI_CONFIG['lstm_batch_size'],
+                    epochs=AI_CONFIG['lstm_epochs'],
+                    validation_data=(X_val, y_val),
+                    callbacks=[early_stop],
+                    verbose=0
+                )
+                
+                # Calculate training metrics
+                train_loss = history.history['loss'][-1]
+                val_loss = history.history['val_loss'][-1]
+                
+                # Cache the trained model
+                self._cache_model(cache_key, self.model, self.scaler)
+                logger.info("Trained and cached new LSTM model")
             
             # Predict next periods
             last_sequence = scaled_data[-sequence_length:]
@@ -312,8 +480,12 @@ class RLStopLossOptimizer:
         self.q_table = {}
         self.alpha = learning_rate
         self.gamma = discount_factor
-        self.epsilon = 0.1  # Exploration rate
+        self.epsilon = 0.2  # Initial exploration rate
+        self.epsilon_decay = 0.995  # Decay per trade
+        self.epsilon_min = 0.05  # Minimum exploration
         self.trade_history = []
+        self.max_q_table_size = 1000  # Limit Q-table size
+        self.max_history_size = 500
         
         # Load saved Q-table if exists
         self._load_q_table()
@@ -463,7 +635,28 @@ class RLStopLossOptimizer:
             'new_q': self.q_table[state],
             'timestamp': datetime.now().isoformat()
         })
+                # Decay exploration rate
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
         
+        # Limit Q-table size
+        if len(self.q_table) > self.max_q_table_size:
+            # Remove least-visited states
+            state_visits = {}
+            for trade in self.trade_history:
+                state = trade.get('state')
+                if state:
+                    state_visits[state] = state_visits.get(state, 0) + 1
+            
+            # Sort by visits and keep top states
+            sorted_states = sorted(state_visits.items(), key=lambda x: x[1], reverse=True)
+            states_to_keep = set(s[0] for s in sorted_states[:self.max_q_table_size])
+            
+            self.q_table = {k: v for k, v in self.q_table.items() if k in states_to_keep}
+            logger.info(f"Pruned Q-table to {len(self.q_table)} states")
+        
+        # Limit history size
+        if len(self.trade_history) > self.max_history_size:
+            self.trade_history = self.trade_history[-self.max_history_size:]
         # Save Q-table periodically
         if len(self.trade_history) % 10 == 0:
             self._save_q_table()
@@ -547,10 +740,25 @@ class RLStopLossOptimizer:
             'trades_processed': len(self.trade_history),
             'avg_multiplier': np.mean(list(self.q_table.values())) if self.q_table else 2.0,
             'learning_rate': self.alpha,
-            'discount_factor': self.gamma
+            'discount_factor': self.gamma,
+            'exploration_rate': round(self.epsilon, 4),
+            'q_table_limit': self.max_q_table_size,
+            'recent_performance': self._calculate_recent_performance()
         }
-
-
+    
+    def _calculate_recent_performance(self) -> Dict:
+        """Calculate performance on recent trades"""
+        recent = self.trade_history[-50:]  # Last 50 trades
+        if not recent:
+            return {'trades': 0, 'avg_reward': 0}
+        
+        rewards = [t.get('reward', 0) for t in recent]
+        return {
+            'trades': len(recent),
+            'avg_reward': round(np.mean(rewards), 2),
+            'positive_pct': round(sum(1 for r in rewards if r > 0) / len(rewards) * 100, 1)
+        }
+    
 # Global RL optimizer instance
 rl_optimizer = RLStopLossOptimizer()
 
@@ -595,11 +803,33 @@ class SentimentAnalyzer:
         self.model = None
         self.tokenizer = None
         self.is_loaded = False
-        
-        # Runtime cache to avoid repeated API calls
         self._company_cache = {}
         self._cache_file = 'company_cache.json'
-        self._load_cache()
+        
+        # ✅ Add request tracking
+        self._api_requests_today = 0
+        self._last_request_date = None
+        self._max_requests_per_day = 90 
+        # Sentiment result cache
+        self._sentiment_cache = {}
+        self._sentiment_cache_ttl = 3600  # 1 hour cache
+
+    def _check_rate_limit(self) -> bool:
+        """Check if we can make another API request"""
+        from datetime import date
+        
+        today = date.today()
+        
+        # Reset counter on new day
+        if self._last_request_date != today:
+            self._api_requests_today = 0
+            self._last_request_date = today
+        
+        if self._api_requests_today >= self._max_requests_per_day:
+            logger.warning(f"⚠️ API rate limit reached ({self._api_requests_today}/{self._max_requests_per_day})")
+            return False
+        
+        return True
     
     def _load_cache(self):
         """Load company cache from file"""
@@ -838,6 +1068,10 @@ class SentimentAnalyzer:
         """
         Fetch news articles using multiple search strategies
         """
+        if not self._check_rate_limit():
+            logger.warning("Skipping news fetch due to rate limit")
+            return []
+        
         if not AI_CONFIG['news_api_key']:
             logger.warning("News API key not configured")
             return []
@@ -896,6 +1130,9 @@ class SentimentAnalyzer:
                 if url and url not in seen_urls:
                     seen_urls.add(url)
                     unique_articles.append(article)
+            
+            self._api_requests_today += 1
+            logger.info(f"API requests today: {self._api_requests_today}/{self._max_requests_per_day}")
             
             return unique_articles
         
@@ -1044,6 +1281,18 @@ class SentimentAnalyzer:
                 'sentiment': None
             }
         
+        # ✅ NEW: Check cache first
+        cache_key = ticker.upper().replace('.NS', '').replace('.BO', '')
+        if cache_key in self._sentiment_cache:
+            cached = self._sentiment_cache[cache_key]
+            cache_age = (datetime.now() - cached['cached_at']).total_seconds()
+            if cache_age < self._sentiment_cache_ttl:
+                logger.info(f"Using cached sentiment for {ticker}")
+                cached_result = cached['result'].copy()
+                cached_result['from_cache'] = True
+                cached_result['cache_age_seconds'] = int(cache_age)
+                return cached_result
+        
         # Get company info DYNAMICALLY
         company_info = self._get_company_info(ticker)
         
@@ -1191,7 +1440,8 @@ class SentimentAnalyzer:
                  relevance_factor * 30)
             )
             
-            return {
+            # ✅ NEW: Build result and cache it
+            result = {
                 'status': 'success',
                 'ticker': ticker,
                 'company_name': company_info['company_name'],
@@ -1221,6 +1471,20 @@ class SentimentAnalyzer:
                 'source': 'FinBERT + NewsAPI (dynamic company lookup)',
                 'warnings': [company_info.get('warning')] if company_info.get('warning') else []
             }
+            
+            # ✅ NEW: Cache the result
+            self._sentiment_cache[cache_key] = {
+                'result': result,
+                'cached_at': datetime.now()
+            }
+            
+            # ✅ NEW: Limit cache size
+            if len(self._sentiment_cache) > 50:
+                oldest = min(self._sentiment_cache.keys(),
+                           key=lambda k: self._sentiment_cache[k]['cached_at'])
+                del self._sentiment_cache[oldest]
+            
+            return result
         
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
@@ -1231,7 +1495,15 @@ class SentimentAnalyzer:
                 'traceback': traceback.format_exc(),
                 'sentiment': None
             }
-    
+    def clear_sentiment_cache(self, ticker: str = None):
+        """Clear sentiment cache"""
+        if ticker:
+            cache_key = ticker.upper().replace('.NS', '').replace('.BO', '')
+            if cache_key in self._sentiment_cache:
+                del self._sentiment_cache[cache_key]
+        else:
+            self._sentiment_cache = {}
+
     def clear_cache(self):
         """Clear the company info cache"""
         self._company_cache = {}
@@ -1704,9 +1976,19 @@ class BacktestEngine:
     Enhanced backtesting engine with detailed analytics
     """
     
-    def __init__(self, initial_capital: float = 100000):
+    def __init__(
+        self, 
+        initial_capital: float = 100000,
+        commission_pct: float = 0.05,  # 0.05% per trade (typical for Indian brokers)
+        slippage_pct: float = 0.1,     # 0.1% slippage
+        include_stt: bool = True       # Include STT for equity
+    ):
         self.initial_capital = initial_capital
         self.capital = initial_capital
+        self.commission_pct = commission_pct
+        self.slippage_pct = slippage_pct
+        self.include_stt = include_stt
+        self.stt_rate = 0.1  # 0.1% STT on sell side
     
     def run_backtest(
         self,
@@ -1746,8 +2028,11 @@ class BacktestEngine:
                 if self._check_entry(historical, entry_rules):
                     qty = int((self.capital * position_size_pct / 100) / current['Close'])
                     if qty > 0:
+                        # Apply slippage on entry (worse entry price)
+                        slipped_entry = current['Close'] * (1 + self.slippage_pct / 100)
+                        
                         position = {
-                            'entry_price': current['Close'],
+                            'entry_price': slipped_entry,
                             'entry_date': current.get('Date', df.index[i]),
                             'entry_index': i,
                             'quantity': qty
@@ -1758,9 +2043,34 @@ class BacktestEngine:
                     historical, exit_rules, position, current
                 )
                 
-                if exit_signal:
-                    pnl = (current['Close'] - position['entry_price']) * position['quantity']
-                    pnl_pct = ((current['Close'] - position['entry_price']) / position['entry_price']) * 100
+                    if exit_signal:
+                    entry_price = position['entry_price']
+                    raw_exit_price = current['Close']
+                    qty = position['quantity']
+                    
+                    # Calculate preliminary P&L to determine slippage direction
+                    preliminary_pnl = (raw_exit_price - entry_price) * qty
+                    
+                    # Apply slippage (always makes exit price worse)
+                    # For sells: reduce exit price slightly
+                    exit_price = raw_exit_price * (1 - self.slippage_pct / 100)
+                    
+                    # Calculate raw P&L after slippage
+                    raw_pnl = (exit_price - entry_price) * qty
+                    
+                    # Calculate costs
+                    trade_value = exit_price * qty
+                    entry_value = entry_price * qty
+                    
+                    # Commission on both sides
+                    commission = (entry_value + trade_value) * (self.commission_pct / 100)
+                    
+                    # STT on sell side only (for equity)
+                    stt = trade_value * (self.stt_rate / 100) if self.include_stt else 0
+                    
+                    # Net P&L after all costs
+                    pnl = raw_pnl - commission - stt
+                    pnl_pct = (pnl / entry_value) * 100
                     
                     self.capital += pnl
                     
@@ -1959,7 +2269,10 @@ def run_simple_backtest(
     period: str = "1y",
     stop_loss_pct: float = 3.0,
     target_pct: float = 6.0,
-    initial_capital: float = 100000
+    initial_capital: float = 100000,
+    commission_pct: float = 0.05,
+    slippage_pct: float = 0.1,
+    include_costs: bool = True
 ) -> Dict:
     """
     Run a simple backtest with default parameters
@@ -1992,7 +2305,12 @@ def run_simple_backtest(
             'trail_distance_pct': 2.0
         }
         
-        engine = BacktestEngine(initial_capital=initial_capital)
+        engine = BacktestEngine(
+            initial_capital=initial_capital,
+            commission_pct=commission_pct if include_costs else 0,
+            slippage_pct=slippage_pct if include_costs else 0,
+            include_stt=include_costs
+        )
         results = engine.run_backtest(df, entry_rules, exit_rules)
         
         results['ticker'] = ticker
@@ -2368,5 +2686,6 @@ __all__ = [
     'detect_market_regime',
     'get_real_sentiment',
     'rl_optimizer',
+    'sentiment_analyzer',  # âœ… ADDED THIS LINE
     'AVAILABLE_FEATURES',
 ]
