@@ -23,7 +23,9 @@ import logging
 import warnings
 import json
 import os
+import threading
 
+_LSTM_LOCK = threading.Lock()
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
@@ -323,90 +325,88 @@ class LSTMPredictor:
             from tensorflow.keras.models import Sequential
             from tensorflow.keras.layers import LSTM, Dense, Dropout
             from sklearn.preprocessing import MinMaxScaler
-            
-            # Prepare data
+
+            # Prepare data (safe – numpy/sklearn only)
             close_prices = df['Close'].values.reshape(-1, 1)
             self.scaler = MinMaxScaler(feature_range=(0, 1))
             scaled_data = self.scaler.fit_transform(close_prices)
-            
-            # Create sequences
+
             sequence_length = AI_CONFIG['lstm_sequence_length']
             X, y = [], []
-            
+
             for i in range(sequence_length, len(scaled_data)):
                 X.append(scaled_data[i-sequence_length:i, 0])
                 y.append(scaled_data[i, 0])
-            
+
             X, y = np.array(X), np.array(y)
             X = np.reshape(X, (X.shape[0], X.shape[1], 1))
-            
-            # Split data (80% train, 20% validation)
+
             split = int(len(X) * 0.8)
             X_train, X_val = X[:split], X[split:]
             y_train, y_val = y[:split], y[split:]
-            
-            if use_cached:
-                self.model = cached_model
-                self.scaler = cached_scaler
-                logger.info("Using cached LSTM model")
-                
-                # Use default values for cached model
-                train_loss = 0.01
-                val_loss = 0.01
-            else:
-                # Build LSTM model with early stopping
-                from tensorflow.keras.callbacks import EarlyStopping
-                
-                self.model = Sequential([
-                    LSTM(50, return_sequences=True, input_shape=(X.shape[1], 1)),
-                    Dropout(0.2),
-                    LSTM(50, return_sequences=True),
-                    Dropout(0.2),
-                    LSTM(50, return_sequences=False),
-                    Dropout(0.2),
-                    Dense(25, activation='relu'),
-                    Dense(1)
-                ])
-                
-                self.model.compile(optimizer='adam', loss='mean_squared_error')
-                
-                # Early stopping to prevent overfitting and reduce training time
-                early_stop = EarlyStopping(
-                    monitor='val_loss', 
-                    patience=3, 
-                    restore_best_weights=True
-                )
-                
-                # Train with validation and early stopping
-                history = self.model.fit(
-                    X_train, y_train,
-                    batch_size=AI_CONFIG['lstm_batch_size'],
-                    epochs=AI_CONFIG['lstm_epochs'],
-                    validation_data=(X_val, y_val),
-                    callbacks=[early_stop],
-                    verbose=0
-                )
-                
-                # Calculate training metrics
-                train_loss = history.history['loss'][-1]
-                val_loss = history.history['val_loss'][-1]
-                
-                # Cache the trained model
-                self._cache_model(cache_key, self.model, self.scaler)
-                logger.info("Trained and cached new LSTM model")
-            
-            # Predict next periods
-            last_sequence = scaled_data[-sequence_length:]
-            predictions = []
-            
-            current_sequence = last_sequence.copy()
-            for _ in range(periods):
-                pred = self.model.predict(
-                    current_sequence.reshape(1, sequence_length, 1),
-                    verbose=0
-                )
-                predictions.append(pred[0][0])
-                current_sequence = np.append(current_sequence[1:], pred)
+
+            # 🔒 LOCK STARTS HERE
+            with _LSTM_LOCK:
+
+                if use_cached:
+                    self.model = cached_model
+                    self.scaler = cached_scaler
+                    logger.info("Using cached LSTM model")
+                    train_loss = 0.01
+                    val_loss = 0.01
+
+                else:
+                    from tensorflow.keras.callbacks import EarlyStopping
+
+                    self.model = Sequential([
+                        LSTM(50, return_sequences=True, input_shape=(X.shape[1], 1)),
+                        Dropout(0.2),
+                        LSTM(50, return_sequences=True),
+                        Dropout(0.2),
+                        LSTM(50, return_sequences=False),
+                        Dropout(0.2),
+                        Dense(25, activation='relu'),
+                        Dense(1)
+                    ])
+
+                    self.model.compile(optimizer='adam', loss='mean_squared_error')
+
+                    early_stop = EarlyStopping(
+                        monitor='val_loss',
+                        patience=3,
+                        restore_best_weights=True
+                    )
+
+                    history = self.model.fit(
+                        X_train, y_train,
+                        batch_size=AI_CONFIG['lstm_batch_size'],
+                        epochs=AI_CONFIG['lstm_epochs'],
+                        validation_data=(X_val, y_val),
+                        callbacks=[early_stop],
+                        verbose=0
+                    )
+
+                    train_loss = history.history['loss'][-1]
+                    val_loss = history.history['val_loss'][-1]
+
+                    self._cache_model(cache_key, self.model, self.scaler)
+                    logger.info("Trained and cached new LSTM model")
+
+                # 🔒 ALSO protect prediction loop
+                last_sequence = scaled_data[-sequence_length:]
+                predictions = []
+                current_sequence = last_sequence.copy()
+
+                for _ in range(periods):
+                    pred = self.model.predict(
+                        current_sequence.reshape(1, sequence_length, 1),
+                        verbose=0
+                    )
+                    predictions.append(pred[0][0])
+                    current_sequence = np.append(current_sequence[1:], pred)
+
+            # 🔓 LOCK ENDS HERE
+
             
             # Inverse transform predictions
             predictions = self.scaler.inverse_transform(
