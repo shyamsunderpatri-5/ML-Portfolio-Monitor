@@ -6017,17 +6017,17 @@ def main():
         st.markdown("### 🤖 AI Dynamic Level Recommendations")
         
         updates_with_changes = [r for r in ai_recommendations if r.get('any_change')]
-        
-        col1, col2, col3 = st.columns([2, 1, 1])
-            
-        with col1:
-            st.markdown(f"**{len(updates_with_changes)} position(s)** have suggested updates")
-            
-        with col2:
-            auto_update = st.checkbox("Auto-update Sheet", value=False, key="auto_update_sheet")
-            
-        with col3:
-            apply_all = st.form_submit_button("📝 Apply All to Sheet", type="primary")
+        with st.form("apply_all_form"):
+            col1, col2, col3 = st.columns([2, 1, 1])
+                
+            with col1:
+                st.markdown(f"**{len(updates_with_changes)} position(s)** have suggested updates")
+                
+            with col2:
+                auto_update = st.checkbox("Auto-update Sheet", value=False, key="auto_update_sheet")
+                
+            with col3:
+                apply_all = st.form_submit_button("📝 Apply All to Sheet", type="primary")
         
         # ✅ FIXED: Only run when button is clicked
         if st.session_state.apply_ai_recommendations:
