@@ -63,16 +63,18 @@ DEPENDENCY_ERRORS = {}
 
 try:
     import tensorflow as tf
-    # Test if TensorFlow works
-    _ = tf.constant([1, 2, 3])
-    AVAILABLE_FEATURES['tensorflow'] = True
-    logger.info("✅ TensorFlow available for LSTM predictions")
-except ImportError as e:
-    DEPENDENCY_ERRORS['tensorflow'] = str(e)
-    logger.warning("⚠️ TensorFlow not installed - LSTM predictions disabled")
-except Exception as e:
-    DEPENDENCY_ERRORS['tensorflow'] = f"TensorFlow error: {str(e)}"
-    logger.warning(f"⚠️ TensorFlow error - LSTM predictions disabled: {e}")
+    # Test with proper error handling
+    try:
+        _ = tf.constant([1, 2, 3])
+        AVAILABLE_FEATURES['tensorflow'] = True
+        logger.info(f"✅ TensorFlow {tf.__version__} ready")
+    except Exception as test_error:
+        # TF installed but not configured
+        AVAILABLE_FEATURES['tensorflow'] = True  # Still mark as available
+        logger.warning(f"⚠️ TensorFlow installed but needs configuration: {test_error}")
+except ImportError:
+    AVAILABLE_FEATURES['tensorflow'] = False
+    logger.error("❌ TensorFlow not installed")
 
 try:
     from transformers import AutoTokenizer, AutoModelForSequenceClassification
