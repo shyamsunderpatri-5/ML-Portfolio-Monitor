@@ -24,6 +24,14 @@ import os
 
 logger = logging.getLogger(__name__)
 
+try:
+    from trading_utils import (
+        calculate_rsi, calculate_atr, calculate_macd,
+        safe_divide, safe_float, safe_get_last
+    )
+    UTILS_AVAILABLE = True
+except ImportError:
+    UTILS_AVAILABLE = False
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
@@ -60,33 +68,6 @@ TRADING_CONFIG = {
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate RSI"""
-    if prices is None or len(prices) < period:
-        return pd.Series([50] * len(prices) if prices is not None else [50])
-    
-    delta = prices.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    rs = avg_gain / (avg_loss + 1e-10)
-    return 100 - (100 / (1 + rs))
-
-
-def calculate_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate ATR"""
-    if high is None or low is None or close is None:
-        return pd.Series([0])
-    if len(high) < period:
-        return pd.Series([0] * len(high))
-    
-    tr1 = high - low
-    tr2 = abs(high - close.shift())
-    tr3 = abs(low - close.shift())
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    return tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-
 
 def calculate_fibonacci_extensions(low: float, high: float, direction: str = 'LONG') -> Dict[str, float]:
     """Calculate Fibonacci extension levels for targets"""
@@ -909,7 +890,7 @@ class PositionMonitor:
         stock_data: Dict[str, pd.DataFrame],
         market_health: Optional[Dict] = None
     ) -> List[Dict]:
-        """Monitor all positions and return AI recommendations"""
+        """Monitor all positions with FIXED ticker matching"""
         
         recommendations = []
         
@@ -923,41 +904,57 @@ class PositionMonitor:
             if not ticker:
                 continue
             
-            # 🔍 DEBUG: Print what keys are in stock_data
-            logger.info(f"Looking for ticker: '{ticker}'")
-            logger.info(f"Available keys in stock_data: {list(stock_data.keys())}")
+            # ✅ FIX: Normalize ticker matching
+            clean_ticker = ticker.replace('.NS', '').replace('.BO', '').upper()
             
-            # Get stock data - TRY MULTIPLE FORMATS
+            # Find matching data using normalized comparison
             df = None
-            ticker_variants = [ticker, f"{ticker}.NS", f"{ticker}.BO", ticker.upper(), ticker.lower()]
-            
-            for variant in ticker_variants:
-                if variant in stock_data:
-                    df = stock_data[variant]
-                    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+            for key, data in stock_data.items():
+                clean_key = key.replace('.NS', '').replace('.BO', '').upper()
+                if clean_key == clean_ticker:
+                    if data is not None and isinstance(data, pd.DataFrame) and not data.empty:
+                        df = data
+                        logger.info(f"✅ Matched {ticker} with data key {key}")
                         break
-                    else:
-                        df = None
             
-            # ⚠️ THIS WAS THE BUG - FIXED NOW
-            # Skip if NO valid data (was backwards before!)
-            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-                logger.warning(f"No valid data for {ticker}, skipping analysis")
+            if df is None:
+                logger.warning(f"No data found for {ticker} (normalized: {clean_ticker})")
                 continue
             
+            # Rest of analysis code...
             try:
-                current_price = float(df['Close'].iloc[-1])
+                # Validate DataFrame has required columns
+                required_cols = ['Open', 'High', 'Low', 'Close']
+                if not all(col in df.columns for col in required_cols):
+                    logger.warning(f"DataFrame for {ticker} missing required columns")
+                    continue
                 
-                # Get position details with safe defaults
+                # Safely extract current price
+                if len(df) < 1:
+                    logger.warning(f"Empty DataFrame for {ticker}")
+                    continue
+                
+                try:
+                    current_price = float(df['Close'].iloc[-1])
+                except (ValueError, TypeError, IndexError) as e:
+                    logger.error(f"Could not get current price for {ticker}: {e}")
+                    continue
+                
+                # Get position details from portfolio
                 position_type = str(row.get('Position', 'LONG')).upper().strip()
-                entry_price = float(row.get('Entry_Price', current_price))
-                stop_loss = float(row.get('Stop_Loss', entry_price * 0.95))
-                target1 = float(row.get('Target_1', entry_price * 1.05))
-                target2_val = row.get('Target_2')
-                target2 = float(target2_val) if target2_val and not pd.isna(target2_val) else target1 * 1.1
-                quantity = int(row.get('Quantity', 1))
                 
-                rec = self.brain.analyze_position(
+                try:
+                    entry_price = float(row.get('Entry_Price', current_price))
+                    stop_loss = float(row.get('Stop_Loss', current_price * 0.95))
+                    target1 = float(row.get('Target_1', current_price * 1.05))
+                    target2 = float(row.get('Target_2', target1 * 1.05))
+                    quantity = int(row.get('Quantity', 1))
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Invalid position values for {ticker}: {e}")
+                    continue
+                
+                # Run AI analysis
+                recommendation = self.brain.analyze_position(
                     ticker=ticker,
                     position_type=position_type,
                     entry_price=entry_price,
@@ -970,18 +967,19 @@ class PositionMonitor:
                     market_health=market_health
                 )
                 
-                recommendations.append(rec)
+                if recommendation and recommendation.get('any_change'):
+                    recommendations.append(recommendation)
+                    logger.info(f"âœ… AI recommendation for {ticker}: {recommendation.get('action')}")
                 
-                if rec.get('should_alert'):
-                    self.alerts.append(rec)
-            
             except Exception as e:
                 logger.error(f"Error analyzing {ticker}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
+                continue
         
         return recommendations
-    
+
+
     def get_pending_alerts(self) -> List[Dict]:
         """Get pending alerts and clear them"""
         alerts = self.alerts.copy()
