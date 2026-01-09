@@ -4635,8 +4635,8 @@ def render_sidebar():
                         regime_result = ai_features.detect_market_regime(nifty_df)
 
                         if regime_result.get("status") == "success":
-                            st.metric("Regime", regime_result["regime"])
-                            st.metric("Confidence", f"{regime_result['confidence']}%")
+                            st.markdown(f"**Regime:** `{regime_result['regime']}`")
+                            st.markdown(f"**Confidence:** {regime_result['confidence']}%")
                         else:
                             st.warning("⚠️ Regime detection failed")
                     else:
