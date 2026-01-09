@@ -26,16 +26,55 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # IMPORT GSPREAD AT MODULE LEVEL (CRITICAL FIX!)
 # ============================================================================
+# ============================================================================
+# IMPORT GSPREAD AT MODULE LEVEL
+# ============================================================================
+GSPREAD_AVAILABLE = False
+GOOGLE_AUTH_AVAILABLE = False
+
 try:
     import gspread
-    from gspread.utils import rowcol_to_a1  # Import utility function directly
-    from google.oauth2.service_account import Credentials
     GSPREAD_AVAILABLE = True
+    
+    # Try importing rowcol_to_a1 helper
+    try:
+        from gspread.utils import rowcol_to_a1
+    except ImportError:
+        # Fallback if utils not available
+        def rowcol_to_a1(row, col):
+            """Simple fallback for A1 notation"""
+            col_str = ''
+            temp_col = col
+            while temp_col > 0:
+                temp_col -= 1
+                col_str = chr(65 + (temp_col % 26)) + col_str
+                temp_col //= 26
+            return f"{col_str}{row}"
+    
+    # Try importing google-auth
+    try:
+        from google.oauth2.service_account import Credentials
+        GOOGLE_AUTH_AVAILABLE = True
+        logger.info("✅ Google Sheets dependencies loaded")
+    except ImportError:
+        GOOGLE_AUTH_AVAILABLE = False
+        logger.warning("⚠️ google-auth not installed. Run: pip install google-auth")
+
 except ImportError:
     GSPREAD_AVAILABLE = False
-    gspread = None
-    rowcol_to_a1 = None
+    GOOGLE_AUTH_AVAILABLE = False
     logger.warning("⚠️ gspread not installed. Run: pip install gspread google-auth")
+    
+    # Define fallback function even when gspread not available
+    def rowcol_to_a1(row, col):
+        col_str = ''
+        temp_col = col
+        while temp_col > 0:
+            temp_col -= 1
+            col_str = chr(65 + (temp_col % 26)) + col_str
+            temp_col //= 26
+        return f"{col_str}{row}"
+
 
 
 # ============================================================================
@@ -119,6 +158,107 @@ class GoogleSheetsManager:
             logger.error(f"Failed to read portfolio: {e}")
             return None
     
+    def check_for_closed_trades(self) -> List[Dict]:
+        """
+        Check for recently closed trades (Status changed from ACTIVE to CLOSED)
+        Returns list of closed trades for logging
+        """
+        if not self.use_api or not self.client:
+            return []
+        
+        try:
+            sheet = self.client.open_by_key(self.sheet_id)
+            worksheet = sheet.worksheet(SHEETS_CONFIG['main_sheet'])
+            data = worksheet.get_all_records()
+            
+            closed_trades = []
+            
+            for row in data:
+                status = str(row.get('Status', '')).upper().strip()
+                
+                if status == 'CLOSED':
+                    # Check if this trade was recently closed
+                    exit_date = row.get('Exit_Date', '')
+                    
+                    if exit_date:
+                        try:
+                            # Parse exit date
+                            from datetime import datetime
+                            exit_dt = pd.to_datetime(exit_date)
+                            
+                            # If closed within last 24 hours
+                            if (datetime.now() - exit_dt).total_seconds() < 86400:
+                                closed_trades.append({
+                                    'ticker': row.get('Ticker'),
+                                    'position_type': row.get('Position'),
+                                    'entry_price': float(row.get('Entry_Price', 0)),
+                                    'exit_price': float(row.get('Exit_Price', 0)),
+                                    'quantity': int(row.get('Quantity', 1)),
+                                    'exit_reason': row.get('Exit_Reason', 'Manual'),
+                                    'exit_date': exit_date
+                                })
+                        except Exception:
+                            continue
+            
+            return closed_trades
+        
+        except Exception as e:
+            logger.error(f"Error checking closed trades: {e}")
+            return []
+    
+    def get_trade_summary(self, days: int = 30) -> Dict:
+        """
+        Get trading summary from the sheet
+        """
+        if not self.use_api or not self.client:
+            return {'status': 'error', 'message': 'API not available'}
+        
+        try:
+            # Try to read from AI_Log sheet
+            sheet = self.client.open_by_key(self.sheet_id)
+            
+            try:
+                log_sheet = sheet.worksheet(SHEETS_CONFIG['log_sheet'])
+                data = log_sheet.get_all_records()
+                
+                if not data:
+                    return {'status': 'empty', 'message': 'No log entries'}
+                
+                # Count recent changes
+                from datetime import datetime, timedelta
+                cutoff = datetime.now() - timedelta(days=days)
+                
+                recent_changes = 0
+                sl_updates = 0
+                target_updates = 0
+                
+                for row in data:
+                    try:
+                        timestamp = datetime.strptime(row.get('Timestamp', ''), '%Y-%m-%d %H:%M:%S')
+                        if timestamp > cutoff:
+                            recent_changes += 1
+                            if row.get('New_SL'):
+                                sl_updates += 1
+                            if row.get('New_Target1') or row.get('New_Target2'):
+                                target_updates += 1
+                    except Exception:
+                        continue
+                
+                return {
+                    'status': 'success',
+                    'total_entries': len(data),
+                    'recent_changes': recent_changes,
+                    'sl_updates': sl_updates,
+                    'target_updates': target_updates,
+                    'period_days': days
+                }
+            
+            except Exception:
+                return {'status': 'error', 'message': 'AI_Log sheet not found'}
+        
+        except Exception as e:
+            return {'status': 'error', 'message': str(e)}
+        
     def update_position_levels(
         self,
         ticker: str,
