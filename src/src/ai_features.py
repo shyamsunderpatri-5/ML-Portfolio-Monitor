@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 AI_CONFIG = {
     # API Keys - Set these for full functionality
     'claude_api_key': os.getenv('CLAUDE_API_KEY', ''),
-    'news_api_key': '0efbb77b-0d77-40c7-b7fc-424627fb3e8d',  # Get free from newsapi.org
+    'news_api_key': '50272e1e31b74cd8957606ba72b69d50',  # Get free from newsapi.org
     'telegram_bot_token': os.getenv('TELEGRAM_BOT_TOKEN', ''),
     'telegram_chat_id': os.getenv('TELEGRAM_CHAT_ID', ''),
     'discord_webhook_url': os.getenv('DISCORD_WEBHOOK_URL', ''),
