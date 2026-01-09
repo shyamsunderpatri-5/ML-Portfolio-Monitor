@@ -1990,6 +1990,7 @@ class BacktestEngine:
         self.include_stt = include_stt
         self.stt_rate = 0.1  # 0.1% STT on sell side
     
+
     def run_backtest(
         self,
         df: pd.DataFrame,
@@ -2043,7 +2044,7 @@ class BacktestEngine:
                     historical, exit_rules, position, current
                 )
                 
-                    if exit_signal:
+                if exit_signal:  # ✅ FIXED: Now properly indented inside else block
                     entry_price = position['entry_price']
                     raw_exit_price = current['Close']
                     qty = position['quantity']
@@ -2091,7 +2092,7 @@ class BacktestEngine:
             equity_curve.append(self.capital)
         
         return self._analyze_results(trades, equity_curve)
-    
+        
     def _add_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add technical indicators"""
         df['RSI'] = calculate_rsi(df['Close'])
