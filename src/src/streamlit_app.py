@@ -6752,7 +6752,9 @@ def main():
                         for sug in hedge['suggestions']:
                             st.caption(sug)
                     
-                    st.caption(hedge['note'])
+                    if hedge.get('note'):
+                        st.caption(hedge['note'])
+
                 # Row 4: Alerts
                 if r['alerts']:
                     st.divider()
