@@ -4840,8 +4840,8 @@ def render_sidebar():
             try:
                 from ai_features import (
                     run_simple_backtest,
-                    get_available_features,  # ✅ Changed from optimize_portfolio_weights
-                    AVAILABLE_FEATURES       # ✅ Changed from AI_CONFIG
+                    get_available_features,
+                    AVAILABLE_FEATURES
                 )
                 ai_available = True
                 ai_error = None
