@@ -57,12 +57,32 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from functools import lru_cache
+import threading
+import time
 import warnings
+warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore')
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# ============================================================================
+# IMPORT SHARED UTILITIES
+# ============================================================================
+try:
+    from trading_utils import (
+        calculate_rsi, calculate_macd, calculate_atr,
+        calculate_bollinger_bands, calculate_stochastic,
+        safe_divide, safe_float
+    )
+    UTILS_IMPORTED = True
+    logger.info("✅ Loaded shared trading utilities")
+except ImportError:
+    UTILS_IMPORTED = False
+    # Functions will be defined inline below as fallback
+
+
+
 
 # Try to import streamlit-autorefresh
 try:
@@ -70,6 +90,8 @@ try:
     HAS_AUTOREFRESH = True
 except ImportError:
     HAS_AUTOREFRESH = False
+
+
 
 # ============================================================================
 # PERFORMANCE CONFIGURATION
@@ -87,7 +109,12 @@ PERF_CONFIG = {
 
 # Thread-safe API call tracking
 api_lock = threading.Lock()
+_api_call_count = 0
 
+def get_api_call_count():
+    """Get current API call count (thread-safe)"""
+    global _api_call_count
+    return _api_call_count
 # ============================================================================
 # PERFORMANCE UTILITIES - NEW IN v7.0
 # ============================================================================
@@ -123,10 +150,19 @@ class DataCache:
     def __init__(self):
         self.cache = {}
         self.timestamps = {}
+        self._last_market_state = None
     
     def get_ttl(self):
         """Get TTL based on market hours"""
-        is_open, _, _, _ = is_market_hours()
+        is_open, current_state, _, _ = is_market_hours()  # ✅ Get current_state
+        
+        # Clear cache if market state changed
+        if self._last_market_state and self._last_market_state != current_state:
+            logger.info(f"Market state changed: {self._last_market_state} -> {current_state}")
+            self.clear()
+        
+        self._last_market_state = current_state
+
         if is_open:
             return PERF_CONFIG['cache_ttl_market_open']
         return PERF_CONFIG['cache_ttl_market_closed']
@@ -196,10 +232,15 @@ def fetch_stock_data_optimized(ticker: str, period: str = "6mo") -> Optional[pd.
                 df = df.reset_index()
                 data_cache.set(cache_key, df)
                 
-                with api_lock:
-                    if 'api_call_count' not in st.session_state:
-                        st.session_state.api_call_count = 0
-                    st.session_state.api_call_count += 1
+                try:
+                    with api_lock:
+                        # Use a module-level counter instead of session_state for thread safety
+                        global _api_call_count
+                        if '_api_call_count' not in globals():
+                            _api_call_count = 0
+                        _api_call_count += 1
+                except Exception:
+                    pass  # Don't fail on counting errors
                 
                 return df
             else:
@@ -284,36 +325,115 @@ def create_minimal_result(full_result: Dict) -> Dict:
 
 def reconstruct_dataframe(chart_data: Dict) -> pd.DataFrame:
     """
-    Reconstruct DataFrame from minimal chart data when needed
+    Safely reconstruct DataFrame from minimal chart data
+    Handles various data formats and edge cases
     """
-    if not chart_data:
+    if not chart_data or not isinstance(chart_data, dict):
+        logger.warning("reconstruct_dataframe: Invalid or empty chart_data")
         return pd.DataFrame()
-    
-    return pd.DataFrame(chart_data)
 
-
-# ============================================================================
-# SAFE UTILITY FUNCTIONS
-# ============================================================================
-
-def safe_divide(numerator, denominator, default=0.0):
-    """Safe division that handles zero and NaN"""
     try:
-        if denominator == 0 or pd.isna(denominator) or pd.isna(numerator):
-            return default
-        result = numerator / denominator
-        return default if pd.isna(result) or np.isinf(result) else result
-    except (TypeError, ValueError, ZeroDivisionError, FloatingPointError):
-        return default
+        # Check if chart_data has the expected structure
+        if not chart_data:
+            return pd.DataFrame()
+        
+        # Handle case where values might be single values instead of lists
+        processed_data = {}
+        expected_length = None
+        
+        for key, value in chart_data.items():
+            if value is None:
+                continue
+            
+            # Convert to list if not already
+            if isinstance(value, (list, tuple)):
+                processed_data[key] = list(value)
+            elif isinstance(value, pd.Series):
+                processed_data[key] = value.tolist()
+            elif isinstance(value, np.ndarray):
+                processed_data[key] = value.tolist()
+            else:
+                # Single value - skip or wrap in list
+                continue
+            
+            # Track expected length
+            if expected_length is None:
+                expected_length = len(processed_data[key])
+            elif len(processed_data[key]) != expected_length:
+                logger.warning(f"Length mismatch for {key}: {len(processed_data[key])} vs {expected_length}")
+        
+        if not processed_data or expected_length is None or expected_length == 0:
+            logger.warning("No valid data to reconstruct DataFrame")
+            return pd.DataFrame()
+        
+        # Create DataFrame
+        df = pd.DataFrame(processed_data)
+        
+        # Ensure required columns exist
+        required_cols = ['Open', 'High', 'Low', 'Close']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            logger.warning(f"Missing required columns: {missing_cols}")
+            # Try to fill with Close if available
+            if 'Close' in df.columns:
+                for col in missing_cols:
+                    df[col] = df['Close']
+            else:
+                return pd.DataFrame()
+        
+        # Handle Date column conversion
+        if 'Date' in df.columns:
+            try:
+                # Try multiple date formats
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+                
+                # Check for NaT values
+                nat_count = df['Date'].isna().sum()
+                if nat_count > len(df) * 0.5:
+                    # More than 50% NaT, create synthetic dates
+                    logger.warning(f"Too many invalid dates ({nat_count}), creating synthetic")
+                    df['Date'] = pd.date_range(end=pd.Timestamp.now(), periods=len(df), freq='D')
+                elif nat_count > 0:
+                    # Fill NaT with forward/backward fill
+                    df['Date'] = df['Date'].fillna(method='ffill').fillna(method='bfill')
+            except Exception as e:
+                logger.warning(f"Date conversion failed: {e}, creating synthetic dates")
+                df['Date'] = pd.date_range(end=pd.Timestamp.now(), periods=len(df), freq='D')
+        else:
+            # No Date column - create one
+            df['Date'] = pd.date_range(end=pd.Timestamp.now(), periods=len(df), freq='D')
+        
+        # Ensure numeric types for price columns
+        numeric_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Handle Volume (might be missing or have NaN)
+        if 'Volume' not in df.columns:
+            df['Volume'] = 0
+        else:
+            df['Volume'] = df['Volume'].fillna(0).astype(int)
+        
+        # Drop rows with NaN in critical columns
+        df = df.dropna(subset=['Close'])
+        
+        # Sort by date
+        df = df.sort_values('Date').reset_index(drop=True)
+        
+        if df.empty:
+            logger.warning("DataFrame is empty after processing")
+            return pd.DataFrame()
+        
+        logger.info(f"Successfully reconstructed DataFrame with {len(df)} rows")
+        return df
 
-def safe_float(value, default=0.0):
-    """Safely convert value to float"""
-    try:
-        result = float(value)
-        return default if pd.isna(result) else result
-    except (TypeError, ValueError, ZeroDivisionError) as e:
-        logging.warning(f"Error in calculation: {e}")
-        return default
+    except Exception as e:
+        logger.error(f"DataFrame reconstruction failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return pd.DataFrame()
 
 # ============================================================================
 # PAGE CONFIG (MUST BE FIRST STREAMLIT COMMAND!)
@@ -485,49 +605,126 @@ def get_market_health():
         vix_df = vix.history(period="5d")
         vix_value = float(vix_df['Close'].iloc[-1]) if not vix_df.empty else 15
         
-        # Calculate Market Health Score (0-100)
+
+        # Calculate Market Health Score (0-100) - Enhanced Version
         health_score = 50  # Start neutral
+        scoring_breakdown = {}
         
-        # NIFTY Price vs SMA20 (0-20 points)
+        # ================================================================
+        # FACTOR 1: NIFTY Price vs Moving Averages (0-25 points)
+        # ================================================================
+        ma_score = 0
+        
+        # Above SMA20 (+10)
         if nifty_price > nifty_sma20:
-            health_score += 15
+            ma_score += 10
+            scoring_breakdown['above_sma20'] = '+10'
         else:
-            health_score -= 15
+            ma_score -= 10
+            scoring_breakdown['above_sma20'] = '-10'
         
-        # NIFTY Price vs SMA50 (0-15 points)
+        # Above SMA50 (+8)
         if nifty_price > nifty_sma50:
-            health_score += 10
+            ma_score += 8
+            scoring_breakdown['above_sma50'] = '+8'
         else:
-            health_score -= 10
+            ma_score -= 8
+            scoring_breakdown['above_sma50'] = '-8'
         
-        # NIFTY RSI (0-20 points)
-        if nifty_rsi > 55:
-            health_score += 15
-        elif nifty_rsi > 45:
-            health_score += 5
-        elif nifty_rsi < 35:
-            health_score -= 15
-        elif nifty_rsi < 45:
-            health_score -= 10
-        
-        # VIX Level (0-25 points)
-        if vix_value < 12:
-            health_score += 20  # Very low volatility = good
-        elif vix_value < 15:
-            health_score += 10
-        elif vix_value > 25:
-            health_score -= 20  # High volatility = bad
-        elif vix_value > 18:
-            health_score -= 10
-        
-        # NIFTY Trend (SMA20 vs SMA50) (0-20 points)
+        # SMA20 > SMA50 (Golden Cross) (+7)
         if nifty_sma20 > nifty_sma50:
-            health_score += 10  # Golden cross
+            ma_score += 7
+            scoring_breakdown['golden_cross'] = '+7'
         else:
-            health_score -= 10  # Death cross
+            ma_score -= 5
+            scoring_breakdown['golden_cross'] = '-5 (Death Cross)'
         
+        health_score += ma_score
+        
+        # ================================================================
+        # FACTOR 2: RSI Momentum (0-20 points)
+        # ================================================================
+        rsi_score = 0
+        
+        if 55 <= nifty_rsi <= 70:
+            rsi_score = 15  # Healthy bullish
+        elif 45 <= nifty_rsi < 55:
+            rsi_score = 5   # Neutral
+        elif 30 <= nifty_rsi < 45:
+            rsi_score = -10  # Weak
+        elif nifty_rsi < 30:
+            rsi_score = 5   # Oversold bounce potential
+        elif nifty_rsi > 70:
+            rsi_score = -5  # Overbought risk
+        
+        health_score += rsi_score
+        scoring_breakdown['rsi'] = f'{rsi_score:+d} (RSI={nifty_rsi:.0f})'
+        
+        # ================================================================
+        # FACTOR 3: VIX Level - Volatility Risk (0-25 points)
+        # ================================================================
+        vix_score = 0
+        
+        if vix_value < 12:
+            vix_score = 20    # Very low volatility = complacency risk
+        elif vix_value < 15:
+            vix_score = 15    # Low volatility = good
+        elif vix_value < 18:
+            vix_score = 5     # Normal
+        elif vix_value < 22:
+            vix_score = -5    # Elevated
+        elif vix_value < 28:
+            vix_score = -15   # High volatility
+        else:
+            vix_score = -25   # Extreme fear
+        
+        health_score += vix_score
+        scoring_breakdown['vix'] = f'{vix_score:+d} (VIX={vix_value:.1f})'
+        
+        # ================================================================
+        # FACTOR 4: Price Momentum (0-15 points)
+        # ================================================================
+        momentum_score = 0
+        
+        if nifty_change > 1:
+            momentum_score = 10
+        elif nifty_change > 0.3:
+            momentum_score = 5
+        elif nifty_change > -0.3:
+            momentum_score = 0
+        elif nifty_change > -1:
+            momentum_score = -5
+        else:
+            momentum_score = -10
+        
+        health_score += momentum_score
+        scoring_breakdown['momentum'] = f'{momentum_score:+d} ({nifty_change:+.2f}%)'
+        
+        # ================================================================
+        # FACTOR 5: Trend Strength (0-15 points)
+        # ================================================================
+        # Distance from SMA20 as % (trend strength indicator)
+        sma20_distance = ((nifty_price - nifty_sma20) / nifty_sma20) * 100
+        
+        trend_score = 0
+        if sma20_distance > 3:
+            trend_score = 10  # Strong uptrend
+        elif sma20_distance > 1:
+            trend_score = 5   # Moderate uptrend
+        elif sma20_distance > -1:
+            trend_score = 0   # Neutral
+        elif sma20_distance > -3:
+            trend_score = -5  # Moderate downtrend
+        else:
+            trend_score = -10 # Strong downtrend
+        
+        health_score += trend_score
+        scoring_breakdown['trend_strength'] = f'{trend_score:+d} ({sma20_distance:+.1f}% from SMA20)'
+        
+        # ================================================================
         # Cap between 0-100
-        health_score = max(0, min(100, health_score))
+        # ================================================================
+        health_score = max(0, min(100, health_score))        
         
         # Determine Status
         if health_score >= 70:
@@ -572,8 +769,9 @@ def get_market_health():
             'nifty_sma20': nifty_sma20,
             'nifty_sma50': nifty_sma50,
             'vix': vix_value,
+            'scoring_breakdown': scoring_breakdown,
             'above_sma20': nifty_price > nifty_sma20,
-            'above_sma50': nifty_price > nifty_sma50
+            'above_sma50': nifty_price > nifty_sma50,
         }
     
     except Exception as e:
@@ -1049,6 +1247,64 @@ def log_trade(ticker, entry_price, exit_price, quantity, position_type, exit_rea
         stats['losses'] += 1
         stats['total_loss'] += abs(pnl)
 
+def log_trade_with_rl_learning(ticker, entry_price, exit_price, quantity, 
+                                position_type, exit_reason, stock_df, sl_used, hit_sl):
+    """Enhanced trade logging with RL learning"""
+    
+    # Original trade logging
+    if position_type == "LONG":
+        pnl = (exit_price - entry_price) * quantity
+        pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+    else:
+        pnl = (entry_price - exit_price) * quantity
+        pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+    
+    trade = {
+        'timestamp': get_ist_now(),
+        'ticker': ticker,
+        'type': position_type,
+        'entry': entry_price,
+        'exit': exit_price,
+        'quantity': quantity,
+        'pnl': pnl,
+        'pnl_pct': pnl_pct,
+        'reason': exit_reason,
+        'win': pnl > 0,
+        'sl_used': sl_used,
+        'hit_sl': hit_sl
+    }
+    
+    st.session_state.trade_history.append(trade)
+    
+    # Update stats
+    stats = st.session_state.performance_stats
+    stats['total_trades'] += 1
+    if pnl > 0:
+        stats['wins'] += 1
+        stats['total_profit'] += pnl
+    else:
+        stats['losses'] += 1
+        stats['total_loss'] += abs(pnl)
+    
+    # ✅ FIX: Connect to RL Optimizer
+    try:
+        from ai_features import rl_optimizer
+        
+        if stock_df is not None and not stock_df.empty:
+            rl_optimizer.learn_from_trade(
+                df=stock_df,
+                entry_price=entry_price,
+                exit_price=exit_price,
+                position_type=position_type,
+                sl_used=sl_used,
+                hit_sl=hit_sl
+            )
+            logger.info(f"✅ RL Optimizer learned from {ticker} trade")
+    except ImportError:
+        logger.warning("RL Optimizer not available")
+    except Exception as e:
+        logger.error(f"RL learning failed: {e}")
+
 def get_performance_stats():
     """Calculate performance statistics"""
     stats = st.session_state.performance_stats
@@ -1185,102 +1441,6 @@ def get_tax_implication(holding_days, pnl):
         # STCG - 15%
         return "STCG (15%)", "🟡"
 
-# ============================================================================
-# TECHNICAL ANALYSIS FUNCTIONS
-# ============================================================================
-
-def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """Calculate RSI using Wilder's smoothing method"""
-    delta = prices.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    
-    # Use Wilder's smoothing (EWM with alpha = 1/period)
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    
-    # Handle division by zero
-    rs = avg_gain / avg_loss.replace(0, np.finfo(float).eps)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-def calculate_macd(
-    prices: pd.Series, 
-    fast: int = 12, 
-    slow: int = 26, 
-    signal: int = 9
-) -> Tuple[pd.Series, pd.Series, pd.Series]:
-    """Calculate MACD (Moving Average Convergence Divergence)"""
-    exp_fast = prices.ewm(span=fast, adjust=False).mean()
-    exp_slow = prices.ewm(span=slow, adjust=False).mean()
-    macd = exp_fast - exp_slow
-    signal_line = macd.ewm(span=signal, adjust=False).mean()
-    histogram = macd - signal_line
-    return macd, signal_line, histogram
-
-def calculate_atr(high, low, close, period=14):
-    """Calculate ATR using Wilder's smoothing"""
-    tr1 = high - low
-    tr2 = abs(high - close.shift())
-    tr3 = abs(low - close.shift())
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # Use Wilder's smoothing
-    atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    return atr
-
-def calculate_bollinger_bands(prices, period=20, std_dev=2):
-    """Calculate Bollinger Bands"""
-    sma = prices.rolling(window=period).mean()
-    std = prices.rolling(window=period).std()
-    upper = sma + (std * std_dev)
-    lower = sma - (std * std_dev)
-    return upper, sma, lower
-
-def calculate_ema(prices, period):
-    """Calculate Exponential Moving Average"""
-    return prices.ewm(span=period, adjust=False).mean()
-
-def calculate_sma(prices, period):
-    """Calculate Simple Moving Average"""
-    return prices.rolling(window=period).mean()
-
-def calculate_adx(high, low, close, period=14):
-    """Calculate ADX correctly"""
-    # True Range
-    tr1 = high - low
-    tr2 = abs(high - close.shift())
-    tr3 = abs(low - close.shift())
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # Directional Movement
-    up_move = high - high.shift()
-    down_move = low.shift() - low  # ✅ FIXED
-    
-    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
-    
-    # Wilder's smoothing
-    alpha = 1/period
-    atr = tr.ewm(alpha=alpha, min_periods=period, adjust=False).mean()
-    plus_di = 100 * pd.Series(plus_dm).ewm(alpha=alpha, adjust=False).mean() / atr
-    minus_di = 100 * pd.Series(minus_dm).ewm(alpha=alpha, adjust=False).mean() / atr
-    
-    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
-    adx = dx.ewm(alpha=alpha, min_periods=period, adjust=False).mean()
-    
-    return adx
-
-def calculate_stochastic(high, low, close, k_period=14, d_period=3):
-    """Calculate Stochastic Oscillator"""
-    lowest_low = low.rolling(window=k_period).min()
-    highest_high = high.rolling(window=k_period).max()
-    
-    EPSILON = np.finfo(float).eps
-    k = 100 * (close - lowest_low) / (highest_high - lowest_low + EPSILON)
-    d = k.rolling(window=d_period).mean()
-    
-    return k, d
 
 # ============================================================================
 # VOLUME ANALYSIS
@@ -1514,6 +1674,132 @@ def find_support_resistance(df, lookback=60):
         'psychological_levels': psychological_levels
     }
 
+def find_volume_weighted_sr(df: pd.DataFrame, lookback: int = 60, num_levels: int = 5) -> Dict:
+    """
+    Find support/resistance levels weighted by volume (Volume Profile)
+    
+    High volume price levels are stronger S/R than low volume levels.
+    """
+    if df is None or len(df) < lookback:
+        return {
+            'volume_supports': [],
+            'volume_resistances': [],
+            'poc': None,  # Point of Control
+            'value_area_high': None,
+            'value_area_low': None
+        }
+    
+    recent = df.tail(lookback).copy()
+    current_price = float(df['Close'].iloc[-1])
+    
+    if 'Volume' not in recent.columns or recent['Volume'].sum() == 0:
+        return {
+            'volume_supports': [],
+            'volume_resistances': [],
+            'poc': None,
+            'value_area_high': None,
+            'value_area_low': None
+        }
+    
+    try:
+        # Create price bins
+        price_min = recent['Low'].min()
+        price_max = recent['High'].max()
+        
+        if price_max <= price_min:
+            return {
+                'volume_supports': [],
+                'volume_resistances': [],
+                'poc': current_price,
+                'value_area_high': current_price * 1.02,
+                'value_area_low': current_price * 0.98
+            }
+        
+        # Create 50 price bins
+        num_bins = 50
+        bin_size = (price_max - price_min) / num_bins
+        
+        volume_profile = {}
+        
+        for _, row in recent.iterrows():
+            # Distribute volume across the price range of this candle
+            candle_low = row['Low']
+            candle_high = row['High']
+            candle_volume = row['Volume']
+            
+            # Find which bins this candle spans
+            start_bin = int((candle_low - price_min) / bin_size)
+            end_bin = int((candle_high - price_min) / bin_size)
+            
+            # Distribute volume evenly across bins
+            bins_spanned = max(1, end_bin - start_bin + 1)
+            volume_per_bin = candle_volume / bins_spanned
+            
+            for bin_idx in range(start_bin, end_bin + 1):
+                if 0 <= bin_idx < num_bins:
+                    bin_price = price_min + (bin_idx + 0.5) * bin_size
+                    volume_profile[bin_price] = volume_profile.get(bin_price, 0) + volume_per_bin
+        
+        if not volume_profile:
+            return {
+                'volume_supports': [],
+                'volume_resistances': [],
+                'poc': current_price,
+                'value_area_high': current_price * 1.02,
+                'value_area_low': current_price * 0.98
+            }
+        
+        # Sort by volume to find high-volume nodes
+        sorted_levels = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
+        
+        # Point of Control (highest volume price)
+        poc = sorted_levels[0][0]
+        
+        # Value Area (70% of volume)
+        total_volume = sum(v for _, v in sorted_levels)
+        value_area_volume = 0
+        value_area_prices = []
+        
+        for price, vol in sorted_levels:
+            value_area_prices.append(price)
+            value_area_volume += vol
+            if value_area_volume >= total_volume * 0.7:
+                break
+        
+        value_area_high = max(value_area_prices)
+        value_area_low = min(value_area_prices)
+        
+        # Get high volume nodes as S/R
+        high_volume_nodes = sorted_levels[:num_levels * 2]
+        
+        # Separate into supports (below current) and resistances (above current)
+        volume_supports = sorted(
+            [p for p, v in high_volume_nodes if p < current_price],
+            reverse=True
+        )[:num_levels]
+        
+        volume_resistances = sorted(
+            [p for p, v in high_volume_nodes if p > current_price]
+        )[:num_levels]
+        
+        return {
+            'volume_supports': volume_supports,
+            'volume_resistances': volume_resistances,
+            'poc': round(poc, 2),
+            'value_area_high': round(value_area_high, 2),
+            'value_area_low': round(value_area_low, 2),
+            'total_volume_analyzed': int(total_volume)
+        }
+    
+    except Exception as e:
+        logger.error(f"Volume profile calculation failed: {e}")
+        return {
+            'volume_supports': [],
+            'volume_resistances': [],
+            'poc': None,
+            'value_area_high': None,
+            'value_area_low': None
+        }
 # ============================================================================
 # MOMENTUM SCORING (0-100)
 # ============================================================================
@@ -1855,6 +2141,72 @@ def analyze_correlation_risk(correlation_matrix, threshold=0.7):
     
     return high_correlations, avg_correlation, status
 	
+def get_correlation_based_sizing(results: List[Dict], correlation_matrix, new_ticker: str) -> Dict:
+    """
+    Suggest position size adjustment based on correlation with existing positions
+    
+    If new position is highly correlated with existing holdings,
+    suggest reducing size to manage concentration risk.
+    """
+    if correlation_matrix is None or new_ticker not in correlation_matrix.columns:
+        return {
+            'adjustment_factor': 1.0,
+            'reason': 'No correlation data available',
+            'correlated_positions': []
+        }
+    
+    # Find existing positions
+    existing_tickers = [r['ticker'] for r in results if r['ticker'] != new_ticker]
+    
+    # Calculate correlations with existing positions
+    high_correlations = []
+    
+    for ticker in existing_tickers:
+        if ticker in correlation_matrix.columns:
+            corr = correlation_matrix.loc[new_ticker, ticker]
+            if abs(corr) >= 0.5:
+                high_correlations.append({
+                    'ticker': ticker,
+                    'correlation': corr,
+                    'position_value': next((r['entry_price'] * r['quantity'] 
+                                           for r in results if r['ticker'] == ticker), 0)
+                })
+    
+    if not high_correlations:
+        return {
+            'adjustment_factor': 1.0,
+            'reason': 'No highly correlated positions',
+            'correlated_positions': []
+        }
+    
+    # Calculate adjustment factor
+    # More correlated positions = smaller suggested size
+    avg_correlation = np.mean([abs(c['correlation']) for c in high_correlations])
+    total_correlated_value = sum(c['position_value'] for c in high_correlations)
+    
+    # Adjustment: reduce by correlation level
+    if avg_correlation >= 0.8:
+        adjustment = 0.5  # Reduce by 50%
+        reason = "Very high correlation with existing positions"
+    elif avg_correlation >= 0.7:
+        adjustment = 0.7  # Reduce by 30%
+        reason = "High correlation with existing positions"
+    elif avg_correlation >= 0.5:
+        adjustment = 0.85  # Reduce by 15%
+        reason = "Moderate correlation with existing positions"
+    else:
+        adjustment = 1.0
+        reason = "Low correlation"
+    
+    return {
+        'adjustment_factor': adjustment,
+        'reason': reason,
+        'avg_correlation': round(avg_correlation, 2),
+        'correlated_positions': high_correlations,
+        'correlated_value': total_correlated_value,
+        'recommendation': f"Consider sizing at {adjustment*100:.0f}% of normal due to {reason.lower()}"
+    }
+    
 # ============================================================================
 # STOP LOSS RISK PREDICTION (0-100)
 # ============================================================================
@@ -2103,7 +2455,23 @@ def predict_upside_potential(df, current_price, target1, target2, position_type)
     if pd.isna(atr):
         atr = current_price * 0.02
     
+    # Support/Resistance (Price-based)
     sr_levels = find_support_resistance(df)
+    
+    # Volume-weighted S/R (more reliable)
+    volume_sr = find_volume_weighted_sr(df)
+    
+    # Merge volume S/R into main S/R if available
+    if volume_sr.get('poc'):
+        sr_levels['poc'] = volume_sr['poc']
+        sr_levels['value_area_high'] = volume_sr['value_area_high']
+        sr_levels['value_area_low'] = volume_sr['value_area_low']
+        
+        # Use volume S/R as primary if available
+        if volume_sr.get('volume_supports'):
+            sr_levels['volume_supports'] = volume_sr['volume_supports']
+        if volume_sr.get('volume_resistances'):
+            sr_levels['volume_resistances'] = volume_sr['volume_resistances']  
     
     if position_type == "LONG":
         atr_target = current_price + (atr * 3)
@@ -2502,6 +2870,114 @@ def calculate_portfolio_risk(results):
         'total_positions': len(results)
     }
 
+# ============================================================================
+# KELLY CRITERION POSITION SIZING
+# ============================================================================
+
+def calculate_kelly_position_size(
+    win_rate: float,
+    avg_win: float,
+    avg_loss: float,
+    capital: float,
+    max_position_pct: float = 25.0,
+    kelly_fraction: float = 0.5  # Half-Kelly for safety
+) -> Dict:
+    """
+    Calculate optimal position size using Kelly Criterion
+    
+    Args:
+        win_rate: Historical win rate (0-100)
+        avg_win: Average winning trade amount
+        avg_loss: Average losing trade amount
+        capital: Total available capital
+        max_position_pct: Maximum position as % of capital
+        kelly_fraction: Fraction of Kelly to use (0.5 = half-Kelly)
+    
+    Returns:
+        Dict with position sizing recommendations
+    """
+    if avg_loss <= 0 or avg_win <= 0:
+        return {
+            'status': 'error',
+            'message': 'Invalid win/loss data',
+            'recommended_pct': 5.0,
+            'recommended_amount': capital * 0.05
+        }
+    
+    # Convert win rate to decimal
+    p = win_rate / 100  # Probability of winning
+    q = 1 - p           # Probability of losing
+    
+    # Calculate win/loss ratio (b in Kelly formula)
+    b = avg_win / avg_loss
+    
+    # Kelly Formula: f* = (p * b - q) / b
+    kelly_pct = ((p * b) - q) / b
+    
+    # Apply Kelly fraction (half-Kelly is safer)
+    adjusted_kelly = kelly_pct * kelly_fraction * 100
+    
+    # Cap at maximum position size
+    final_pct = min(max(0, adjusted_kelly), max_position_pct)
+    
+    # Calculate amount
+    position_amount = capital * (final_pct / 100)
+    
+    # Determine recommendation quality
+    if kelly_pct < 0:
+        quality = "NEGATIVE"
+        advice = "🔴 Negative expectancy - don't trade this strategy"
+    elif final_pct < 5:
+        quality = "CONSERVATIVE"
+        advice = "🟡 Small edge - use minimal position size"
+    elif final_pct < 15:
+        quality = "MODERATE"
+        advice = "🟢 Good edge - reasonable position size"
+    else:
+        quality = "AGGRESSIVE"
+        advice = "🔵 Strong edge - but consider reducing for safety"
+    
+    return {
+        'status': 'success',
+        'full_kelly_pct': round(kelly_pct * 100, 2),
+        'adjusted_kelly_pct': round(adjusted_kelly, 2),
+        'recommended_pct': round(final_pct, 2),
+        'recommended_amount': round(position_amount, 0),
+        'max_allowed_pct': max_position_pct,
+        'kelly_fraction_used': kelly_fraction,
+        'quality': quality,
+        'advice': advice,
+        'inputs': {
+            'win_rate': win_rate,
+            'avg_win': avg_win,
+            'avg_loss': avg_loss,
+            'win_loss_ratio': round(b, 2)
+        }
+    }
+
+
+def get_position_size_recommendation(ticker: str, capital: float) -> Dict:
+    """
+    Get position size recommendation for a specific ticker based on historical performance
+    """
+    # Get stock-specific history
+    stock_history = get_stock_performance_history(ticker)
+    
+    if not stock_history.get('has_history'):
+        # Use default conservative sizing
+        return {
+            'status': 'no_history',
+            'message': f"No trade history for {ticker}. Using default 5%.",
+            'recommended_pct': 5.0,
+            'recommended_amount': capital * 0.05
+        }
+    
+    return calculate_kelly_position_size(
+        win_rate=stock_history['win_rate'],
+        avg_win=stock_history['avg_win'],
+        avg_loss=stock_history['avg_loss'],
+        capital=capital
+    )
 # ============================================================================
 # PARTIAL PROFIT BOOKING TRACKER
 # ============================================================================
@@ -3846,6 +4322,44 @@ def send_portfolio_alerts(results, email_settings, portfolio_risk):
                         log_email(f"Alert sent: {result['ticker']} - {alert['type']}")
                     else:
                         log_email(f"Alert failed for {result['ticker']}: {msg}")
+    # Send to Telegram/Discord if configured
+    try:
+        from ai_features import send_telegram_alert, send_discord_alert, AI_CONFIG
+        
+        # Only for critical alerts
+        if critical_count > 0:
+            # Build message
+            msg_lines = [
+                f"🚨 <b>PORTFOLIO ALERT</b> 🚨",
+                f"",
+                f"Critical: {critical_count} | Warnings: {warning_count}",
+                f"Total P&L: ₹{sum(r['pnl_amount'] for r in results):+,.0f}",
+                f"",
+            ]
+            
+            for r in results:
+                if r['overall_status'] == 'CRITICAL':
+                    msg_lines.append(
+                        f"🔴 <b>{r['ticker']}</b>: {r['pnl_percent']:+.1f}% | "
+                        f"{r['overall_action'].replace('_', ' ')}"
+                    )
+            
+            message = "\n".join(msg_lines)
+            
+            # Send to Telegram if configured
+            if AI_CONFIG.get('telegram_bot_token'):
+                send_telegram_alert(message, parse_mode='HTML')
+            
+            # Send to Discord if configured
+            if AI_CONFIG.get('discord_webhook_url'):
+                # Convert to plain text for Discord
+                plain_message = message.replace('<b>', '**').replace('</b>', '**')
+                send_discord_alert(plain_message, title="Portfolio Alert", color=0xFF0000)
+    
+    except ImportError:
+        pass  # ai_features not available
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram/Discord alerts: {e}")
 # ============================================================================
 # SIDEBAR CONFIGURATION
 # ============================================================================
@@ -4110,6 +4624,16 @@ def render_sidebar():
             if calc_entry > calc_sl:
                 risk_amount = calc_capital * (calc_risk_pct / 100)
                 risk_per_share = abs(calc_entry - calc_sl)
+                # Additional validations
+                if calc_entry <= 0:
+                    st.error("❌ Entry price must be positive")
+                elif calc_sl <= 0:
+                    st.error("❌ Stop loss must be positive")
+                elif calc_capital < calc_entry:
+                    st.error("❌ Capital must be greater than entry price")
+                elif calc_risk_pct > 5:
+                    st.warning("⚠️ Risk > 5% per trade is very aggressive")
+                              
                 position_size = int(risk_amount / risk_per_share)
                 investment = position_size * calc_entry
                 investment_pct = (investment / calc_capital) * 100
@@ -4126,6 +4650,43 @@ def render_sidebar():
                 st.info("For SHORT: Use Entry < SL calculator below")
             else:
                 st.info("Enter different Entry and Stop Loss prices")
+
+            with st.expander("📊 AI Position Size (Based on History)", expanded=False):
+                st.markdown("**Uses your trade history to calculate optimal size**")
+                
+                ps_ticker = st.text_input(
+                    "Ticker for sizing", 
+                    placeholder="RELIANCE",
+                    key="ps_ai_ticker"
+                )
+                ps_capital = st.number_input(
+                    "Available Capital (₹)",
+                    min_value=10000.0,
+                    value=100000.0,
+                    step=10000.0,
+                    key="ps_ai_capital"
+                )
+                
+                if st.button("Calculate AI Position Size", key="calc_ai_ps"):
+                    if ps_ticker:
+                        result = get_position_size_recommendation(ps_ticker.upper(), ps_capital)
+                        
+                        if result.get('status') == 'success':
+                            st.success(f"**Recommended: {result['recommended_pct']:.1f}% = ₹{result['recommended_amount']:,.0f}**")
+                            st.info(result['advice'])
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Full Kelly", f"{result['full_kelly_pct']:.1f}%")
+                                st.metric("Win Rate", f"{result['inputs']['win_rate']:.1f}%")
+                            with col2:
+                                st.metric("Quality", result['quality'])
+                                st.metric("Win/Loss Ratio", f"{result['inputs']['win_loss_ratio']:.2f}")
+                        else:
+                            st.warning(result.get('message', 'No history available'))
+                            st.info("Using default 5% position size")
+                    else:
+                        st.error("Enter a ticker symbol")
         
         st.divider()
         
@@ -4325,6 +4886,38 @@ def render_sidebar():
         # =====================================================================
         # DEBUG INFO
         # =====================================================================
+        with st.expander("🔧 Debug & Developer Options"):
+            debug_mode = st.checkbox(
+                "Enable Debug Mode",
+                value=st.session_state.get('debug_mode', False),
+                key="debug_mode_toggle",
+                help="Shows additional technical information"
+            )
+            st.session_state['debug_mode'] = debug_mode
+            
+            if debug_mode:
+                st.warning("⚠️ Debug mode enabled - additional logging active")
+                
+                # Show memory usage
+                import sys
+                
+                st.markdown("**Memory Usage:**")
+                cache_size = len(data_cache.cache)
+                st.caption(f"Cache entries: {cache_size}")
+                st.caption(f"Trade history: {len(st.session_state.get('trade_history', []))} trades")
+                st.caption(f"Email log: {len(st.session_state.get('email_log', []))} entries")
+                
+                # Clear individual caches
+                st.markdown("**Clear Specific Caches:**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Clear Data Cache", key="clear_data_cache"):
+                        data_cache.clear()
+                        st.success("Data cache cleared")
+                with col2:
+                    if st.button("Clear ST Cache", key="clear_st_cache"):
+                        st.cache_data.clear()
+                        st.success("Streamlit cache cleared")
         with st.expander("🔧 Debug Info"):
             st.write(f"Email configured: {'✅ Yes' if credentials_configured else '❌ No'}")
             st.write(f"Email enabled: {'✅ Yes' if email_settings['enabled'] else '❌ No'}")
@@ -4613,7 +5206,104 @@ def display_performance_dashboard():
                     'Result': '✅' if trade['win'] else '❌',
                     'Reason': trade['reason']
                 })
+
+         # Trade Journal Export
+        if st.session_state.trade_history:
+            st.divider()
+            st.markdown("### 📔 Trade Journal Export")
             
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                export_format = st.selectbox(
+                    "Export Format",
+                    ["CSV", "JSON", "Excel-ready CSV"],
+                    key="journal_export_format"
+                )
+            
+            with col2:
+                include_analysis = st.checkbox(
+                    "Include detailed analysis", 
+                    value=True,
+                    key="include_analysis"
+                )
+            
+            # Prepare export data
+            journal_data = []
+            
+            for trade in st.session_state.trade_history:
+                entry = {
+                    'Date': trade['timestamp'].strftime('%Y-%m-%d %H:%M'),
+                    'Ticker': trade['ticker'],
+                    'Type': trade['type'],
+                    'Entry_Price': trade['entry'],
+                    'Exit_Price': trade['exit'],
+                    'Quantity': trade['quantity'],
+                    'P&L_Amount': round(trade['pnl'], 2),
+                    'P&L_Percent': round(trade['pnl_pct'], 2),
+                    'Result': 'WIN' if trade['win'] else 'LOSS',
+                    'Exit_Reason': trade['reason']
+                }
+                
+                if include_analysis:
+                    # Add computed fields
+                    entry['Risk_Amount'] = round(abs(trade['pnl']) if not trade['win'] else 0, 2)
+                    entry['Reward_Amount'] = round(trade['pnl'] if trade['win'] else 0, 2)
+                    
+                    # Add holding period if available
+                    if 'holding_days' in trade:
+                        entry['Holding_Days'] = trade['holding_days']
+                
+                journal_data.append(entry)
+            
+            df_journal = pd.DataFrame(journal_data)
+            
+            if export_format == "CSV":
+                csv_data = df_journal.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Trade Journal (CSV)",
+                    csv_data,
+                    file_name=f"trade_journal_{get_ist_now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="download_journal_csv"
+                )
+            
+            elif export_format == "JSON":
+                json_data = df_journal.to_json(orient='records', indent=2, date_format='iso')
+                st.download_button(
+                    "📥 Download Trade Journal (JSON)",
+                    json_data,
+                    file_name=f"trade_journal_{get_ist_now().strftime('%Y%m%d')}.json",
+                    mime="application/json",
+                    key="download_journal_json"
+                )
+            
+            else:  # Excel-ready CSV
+                # Add summary row
+                summary_row = {
+                    'Date': 'SUMMARY',
+                    'Ticker': f"{len(journal_data)} trades",
+                    'Type': '',
+                    'Entry_Price': '',
+                    'Exit_Price': '',
+                    'Quantity': '',
+                    'P&L_Amount': round(sum(t['P&L_Amount'] for t in journal_data), 2),
+                    'P&L_Percent': round(np.mean([t['P&L_Percent'] for t in journal_data]), 2),
+                    'Result': f"{sum(1 for t in journal_data if t['Result']=='WIN')}/{len(journal_data)} wins",
+                    'Exit_Reason': ''
+                }
+                
+                journal_data.append(summary_row)
+                df_excel = pd.DataFrame(journal_data)
+                
+                csv_data = df_excel.to_csv(index=False)
+                st.download_button(
+                    "📥 Download Trade Journal (Excel-ready)",
+                    csv_data,
+                    file_name=f"trade_journal_excel_{get_ist_now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="download_journal_excel"
+                )           
             df_history = pd.DataFrame(history_data)
             st.dataframe(df_history, use_container_width=True, hide_index=True)
             
@@ -5321,28 +6011,27 @@ def main():
     # =========================================================================
     # AI LEVEL RECOMMENDATIONS (FIXED VERSION)
     # =========================================================================
-    
+    if 'apply_ai_recommendations' not in st.session_state:
+         st.session_state.apply_ai_recommendations = False
     if ai_updates_available and ai_recommendations:
         st.divider()
         st.markdown("### 🤖 AI Dynamic Level Recommendations")
         
         updates_with_changes = [r for r in ai_recommendations if r.get('any_change')]
         
-        # Show controls
-        with st.form(key="ai_recommendations_form", clear_on_submit=False):
-            col1, col2, col3 = st.columns([2, 1, 1])
+        col1, col2, col3 = st.columns([2, 1, 1])
             
-            with col1:
-                st.markdown(f"**{len(updates_with_changes)} position(s)** have suggested updates")
+        with col1:
+            st.markdown(f"**{len(updates_with_changes)} position(s)** have suggested updates")
             
-            with col2:
-                auto_update = st.checkbox("Auto-update Sheet", value=False, key="auto_update_sheet")
+        with col2:
+            auto_update = st.checkbox("Auto-update Sheet", value=False, key="auto_update_sheet")
             
-            with col3:
-                apply_all = st.form_submit_button("📝 Apply All to Sheet", type="primary")
+        with col3:
+            apply_all = st.form_submit_button("📝 Apply All to Sheet", type="primary")
         
         # ✅ FIXED: Only run when button is clicked
-        if apply_all:
+        if st.session_state.apply_ai_recommendations:
             try:
                 from google_sheets_manager import update_portfolio_from_ai
                 result = update_portfolio_from_ai(ai_recommendations)
@@ -5350,14 +6039,15 @@ def main():
                 if result.get('updates_successful', 0) > 0:
                     st.success(f"✅ Updated {result['updates_successful']} position(s) in Google Sheet!")
                     st.balloons()
+                    st.session_state.apply_ai_recommendations = False  
                     time.sleep(1)
                     st.rerun()
                 else:
                     st.warning("⚠️ No updates applied. Check if Sheet API is configured.")
-            except ImportError:
-                st.error("❌ Google Sheets manager not available. Create `google_sheets_manager.py`")
+                    st.session_state.apply_ai_recommendations = False  
             except Exception as e:
                 st.error(f"❌ Update failed: {e}")
+                st.session_state.apply_ai_recommendations = False
         
         # Show each recommendation
         for idx, rec in enumerate(updates_with_changes):
@@ -5775,7 +6465,35 @@ def main():
                                 <span style='color:{status_color};'>{pe['status']}</span>
                             </div>
                             """, unsafe_allow_html=True)
-                
+                 # Row 3.5: Options Hedge Suggestion (for risky positions)
+                if r['sl_risk'] >= 60 or r['overall_status'] == 'CRITICAL':
+                    st.divider()
+                    st.markdown("##### 🛡️ Hedge Suggestion")
+                    
+                    hedge = suggest_options_hedge(
+                        ticker=r['ticker'],
+                        position_type=r['position_type'],
+                        current_price=r['current_price'],
+                        position_value=r['current_price'] * r['quantity'],
+                        market_health=market_health
+                    )
+                    
+                    urgency_colors = {'HIGH': '#dc3545', 'MEDIUM': '#ffc107', 'LOW': '#28a745'}
+                    
+                    st.markdown(f"""
+                    <div style='background:{urgency_colors.get(hedge['urgency'], '#6c757d')}20; 
+                                padding:10px; border-radius:8px; border-left:3px solid {urgency_colors.get(hedge['urgency'], '#6c757d')}'>
+                        <strong>{hedge['hedge_type']}</strong> (Urgency: {hedge['urgency']})<br>
+                        {hedge['recommendation']}<br>
+                        <small>Budget: ~₹{hedge['estimated_premium_budget']:,.0f}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if hedge.get('suggestions'):
+                        for sug in hedge['suggestions']:
+                            st.caption(sug)
+                    
+                    st.caption(hedge['note'])
                 # Row 4: Alerts
                 if r['alerts']:
                     st.divider()
@@ -5822,7 +6540,7 @@ def main():
                 # Fetch fresh if no cached data
                 df = fetch_stock_data_optimized(selected_stock)
             
-            if df is None or df.empty:
+            if df is not None and not df.empty:
                 # Candlestick Chart
                 fig = go.Figure()
                 
@@ -6037,6 +6755,35 @@ def main():
         
         # Correlation Analysis
         display_correlation_analysis(results, settings['enable_correlation'])
+                # Correlation-based Position Sizing
+        if settings['enable_correlation'] and st.session_state.correlation_matrix is not None:
+            st.divider()
+            st.markdown("### 📐 Correlation-Based Position Sizing")
+            
+            with st.expander("Check new position sizing", expanded=False):
+                new_ticker = st.text_input(
+                    "Ticker to add",
+                    placeholder="INFY",
+                    key="corr_sizing_ticker"
+                )
+                
+                if new_ticker and st.button("Check Correlation Impact", key="check_corr_impact"):
+                    sizing_result = get_correlation_based_sizing(
+                        results, 
+                        st.session_state.correlation_matrix,
+                        new_ticker.upper()
+                    )
+                    
+                    if sizing_result['adjustment_factor'] < 1.0:
+                        st.warning(f"⚠️ {sizing_result['reason']}")
+                        st.info(sizing_result['recommendation'])
+                        
+                        if sizing_result.get('correlated_positions'):
+                            st.markdown("**Correlated with:**")
+                            for cp in sizing_result['correlated_positions']:
+                                st.caption(f"- {cp['ticker']}: {cp['correlation']:.2f} correlation")
+                    else:
+                        st.success("✅ No high correlation with existing positions")
     
     # =========================================================================
     # TAB 6: PERFORMANCE
@@ -6130,6 +6877,7 @@ def main():
                 monte_carlo_portfolio_optimization,
                 run_simple_backtest,
                 rl_optimizer,
+                sentiment_analyzer,  # âœ… ADDED THIS LINE
                 AVAILABLE_FEATURES
             )
             ai_loaded = True
@@ -6531,7 +7279,7 @@ def main():
     st.markdown(
         f"<p style='text-align:center;color:#666;font-size:0.8em;'>"
         f"Smart Portfolio Monitor v6.0 | Last updated: {ist_now.strftime('%H:%M:%S')} IST | "
-        f"Positions: {len(results)} | API Calls: {st.session_state.api_call_count}"
+        f"Positions: {len(results)} | API Calls: {get_api_call_count()}"
         f"</p>",
         unsafe_allow_html=True
     )
