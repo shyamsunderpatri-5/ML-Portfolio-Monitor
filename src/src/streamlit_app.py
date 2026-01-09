@@ -6731,16 +6731,23 @@ def main():
                         st.warning("⚠️ Hedge unavailable")
                     
                     urgency_colors = {'HIGH': '#dc3545', 'MEDIUM': '#ffc107', 'LOW': '#28a745'}
-                    
-                    st.markdown(f"""
-                    <div style='background:{urgency_colors.get(hedge['urgency'], '#6c757d')}20; 
-                                padding:10px; border-radius:8px; border-left:3px solid {urgency_colors.get(hedge['urgency'], '#6c757d')}'>
-                        <strong>{hedge['hedge_type']}</strong> (Urgency: {hedge['urgency']})<br>
-                        {hedge['recommendation']}<br>
-                        <small>Budget: ~₹{hedge['estimated_premium_budget']:,.0f}</small>
+                    urgency = hedge.get('urgency', 'MEDIUM')
+                    bg_color = urgency_colors.get(urgency, '#6c757d')           
+                    st.markdown(
+                    f"""
+                    <div style='background:{bg_color}20;
+                                padding:10px;
+                                border-radius:8px;
+                                border-left:3px solid {bg_color}'>
+                        <strong>{hedge.get('hedge_type', 'HEDGE')}</strong>
+                        (Urgency: {urgency})<br>
+                        {hedge.get('recommendation', 'No recommendation')}<br>
+                        <small>Budget: ~₹{hedge.get('estimated_premium_budget', 0):,.0f}</small>
                     </div>
-                    """, unsafe_allow_html=True)
-                    
+                    """,
+                    unsafe_allow_html=True
+                )
+                                    
                     if hedge.get('suggestions'):
                         for sug in hedge['suggestions']:
                             st.caption(sug)
