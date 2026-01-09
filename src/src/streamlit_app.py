@@ -60,6 +60,7 @@ from functools import lru_cache
 import threading
 import time
 import warnings
+import ai_features
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore')
 
@@ -4624,33 +4625,26 @@ def render_sidebar():
         # =====================================================================
         st.markdown("### 🐂🐻 Market Regime")
 
-        if AI_FEATURES_AVAILABLE and callable(globals().get("detect_market_regime")):
-            try:
+        try:
+            if hasattr(ai_features, "detect_market_regime"):
                 with st.spinner("Analyzing..."):
                     nifty = yf.Ticker("^NSEI")
                     nifty_df = nifty.history(period="6mo")
 
                     if not nifty_df.empty and len(nifty_df) >= 60:
-                        regime_result = detect_market_regime(nifty_df)
+                        regime_result = ai_features.detect_market_regime(nifty_df)
 
-                        if regime_result and regime_result.get("status") == "success":
-                            current_regime = regime_result.get("regime", "UNKNOWN")
-                            confidence = regime_result.get("confidence", 0)
-
-                            st.metric("Regime", current_regime)
-                            st.metric("Confidence", f"{confidence:.0f}%")
-
-                            st.session_state["market_regime"] = current_regime
-                            st.session_state["regime_confidence"] = confidence
+                        if regime_result.get("status") == "success":
+                            st.metric("Regime", regime_result["regime"])
+                            st.metric("Confidence", f"{regime_result['confidence']}%")
                         else:
                             st.warning("⚠️ Regime detection failed")
                     else:
-                        st.warning("⚠️ Insufficient Nifty data")
-
-            except Exception as e:
-                st.warning(f"⚠️ Regime error: {str(e)}")
-        else:
-            st.info("💡 Market regime analysis unavailable")
+                        st.warning("⚠️ Insufficient data")
+            else:
+                st.info("💡 Regime detection unavailable")
+        except Exception as e:
+            st.error(f"Regime error: {e}")
 
         st.divider()
 
