@@ -1807,7 +1807,7 @@ class MarketRegimeDetector:
             n_states = AI_CONFIG['hmm_states']
             self.model = GaussianHMM(
                 n_components=n_states,
-                covariance_type="full",
+                covariance_type="diag",   # ✅ FIX
                 n_iter=100,
                 random_state=42
             )
