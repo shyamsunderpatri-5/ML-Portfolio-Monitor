@@ -2932,7 +2932,7 @@ def get_google_sheet_connection():
     try:
         # ✅ FIX: Use the 'credentials' object created at the top of the script
         gc = gspread.authorize(credentials)
-        sh = gc.open("YOUR_SHEET_NAME") # Ensure this matches your Sheet name
+        sh = gc.open("my_portfolio") # Ensure this matches your Sheet name
         return sh.sheet1, "success"
     except Exception as e:
         return None, str(e)
