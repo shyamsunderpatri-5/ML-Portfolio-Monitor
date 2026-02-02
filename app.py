@@ -4863,7 +4863,7 @@ def main():
                                     r['trail_stop'],
                                     r.get('trail_reason', 'Trail stop recommended'),
                                     send_email_alert=True,
-                                    email_settings=email_settings,
+                                    email_settings=settings["email_settings"],
                                     result=r
                                 )
                                 
@@ -4889,7 +4889,7 @@ def main():
                                     2,
                                     f"Extended target based on {r['upside_score']}% upside score",
                                     send_email_alert=True,
-                                    email_settings=email_settings,
+                                    email_settings=settings["email_settings"],
                                     result=r
                                 )
                                 
@@ -4943,7 +4943,7 @@ def main():
                                     r['pnl_amount'],
                                     exit_reason,
                                     send_email_alert=True,
-                                    email_settings=email_settings,
+                                    email_settings=settings["email_settings"],
                                     result=r
                                 )
                                 
