@@ -2759,17 +2759,27 @@ def smart_analyze_position(ticker, position_type, entry_price, quantity, stop_lo
 # ============================================================================
 
 def load_portfolio():
-    """Load portfolio from Google Sheets"""
+    """Load portfolio from Google Sheets using gspread"""
     
-    # Your Google Sheets URL
-    GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/1sM6tocnkdoEm9fme2gAYq5GzQpwNBI6UBXS-D0_62I4/edit?usp=sharing"
+    if not HAS_GSPREAD:
+        st.error("❌ gspread not installed. Run: pip install gspread oauth2client")
+        return None
+    
     try:
-        # Convert to export URL
-        sheet_id = GOOGLE_SHEETS_URL.split('/d/')[1].split('/')[0]
-        export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
+        # Use the service account connection (already defined in your code)
+        sheet, status = get_google_sheet_connection()
         
-        # Read from Google Sheets
-        df = pd.read_csv(export_url)
+        if sheet is None:
+            st.error(f"❌ Connection failed: {status}")
+            return None
+        
+        # Get all records from the sheet
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        
+        if df.empty:
+            st.warning("⚠️ No data found in sheet")
+            return None
         
         # Filter active positions
         if 'Status' in df.columns:
@@ -2813,9 +2823,6 @@ def load_portfolio():
         
         st.success(f"✅ Loaded {len(df)} active positions from Google Sheets")
         
-        # ✅ NEW: Store sheet_id in session state for updates
-        st.session_state.sheet_id = sheet_id
-        
         return df
     
     except Exception as e:
@@ -2834,7 +2841,7 @@ def load_portfolio():
             'Target_2': [2650.00, 3850.00, 1350.00, 1850.00, 1180.00],
             'Entry_Date': ['2024-01-15', '2024-01-20', '2024-02-01', '2024-01-10', '2024-02-05'],
             'Status': ['ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE', 'ACTIVE'],
-            'Realized_PnL': [0.0, 0.0, 0.0, 0.0, 0.0]  # ✅ NEW
+            'Realized_PnL': [0.0, 0.0, 0.0, 0.0, 0.0]
         })
 # ============================================================================
 # PORTFOLIO VALIDATION
