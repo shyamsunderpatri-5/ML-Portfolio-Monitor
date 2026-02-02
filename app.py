@@ -2,7 +2,7 @@
 🧠 SMART PORTFOLIO MONITOR v6.0 - COMPLETE EDITION
 ==================================================
 """
-
+import os
 import streamlit as st
 import yfinance as yf
 import pandas as pd
