@@ -2762,8 +2762,7 @@ def load_portfolio():
     """Load portfolio from Google Sheets"""
     
     # Your Google Sheets URL
-    GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/155htPsyom2e-dR5BZJx_cFzGxjQQjePJt3H2sRLSr6w/edit?usp=sharing"
-    
+    GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/1sM6tocnkdoEm9fme2gAYq5GzQpwNBI6UBXS-D0_62I4/edit?usp=sharing"
     try:
         # Convert to export URL
         sheet_id = GOOGLE_SHEETS_URL.split('/d/')[1].split('/')[0]
