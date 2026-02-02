@@ -77,6 +77,33 @@ def safe_float(value, default=0.0):
         logging.warning(f"Error in calculation: {e}")
         return default
 
+
+def round_to_tick_size(price):
+    """
+    Round price according to NSE tick size rules:
+    - Price >= 1000: Round to 0.05 (₹2500.00, ₹2500.05, ₹2500.10...)
+    - Price >= 10: Round to 0.05 (₹500.00, ₹500.05, ₹500.10...)
+    - Price >= 1: Round to 0.05 (₹5.00, ₹5.05, ₹5.10...)
+    - Price < 1: Round to 0.01 (₹0.20, ₹0.21, ₹0.22... for penny stocks)
+    
+    Returns: Properly rounded price as float
+    """
+    if pd.isna(price) or price is None:
+        return 0.0
+    
+    price = float(price)
+    
+    if price < 0:
+        return 0.0
+    
+    # NSE Tick Size Rules
+    if price < 1:
+        # Penny stocks: Round to 0.01 (paise level)
+        return round(price / 0.01) * 0.01
+    else:
+        # All other stocks: Round to 0.05
+        return round(price / 0.05) * 0.05
+
 # ============================================================================
 # PAGE CONFIG (MUST BE FIRST STREAMLIT COMMAND!)
 # ============================================================================
@@ -1894,6 +1921,9 @@ def predict_upside_potential(df, current_price, target1, target2, position_type)
         new_target = max(atr_target, sr_target) if sr_target < current_price else atr_target
         potential_gain = ((current_price - new_target) / current_price) * 100
     
+    # ✅ Round new_target to NSE tick size
+    new_target = round_to_tick_size(new_target)
+    
     if potential_gain > 5:
         score += 10
         reasons.append(f"🎯 {potential_gain:.1f}% more potential")
@@ -1952,6 +1982,10 @@ def calculate_dynamic_levels(df, entry_price, current_price, stop_loss, position
         # Calculate dynamic targets
         result['target1'] = current_price + (atr * 1.5)
         result['target2'] = current_price + (atr * 3)
+        # ✅ Round targets to NSE tick size
+        result["target1"] = round_to_tick_size(result["target1"])
+        result["target2"] = round_to_tick_size(result["target2"])
+        result["target3"] = round_to_tick_size(result["target3"])
         result['target3'] = min(current_price + (atr * 5), sr_levels['nearest_resistance'])
         
         # Dynamic trail based on profit level AND volatility (ATR)
@@ -2008,11 +2042,18 @@ def calculate_dynamic_levels(df, entry_price, current_price, stop_loss, position
         result['should_trail'] = result['trail_stop'] > stop_loss
         result['trail_improvement'] = result['trail_stop'] - stop_loss if result['should_trail'] else 0
         result['trail_improvement_pct'] = (result['trail_improvement'] / entry_price * 100) if result['should_trail'] else 0
+        
+        # ✅ Round trail_stop to NSE tick size
+        result["trail_stop"] = round_to_tick_size(result["trail_stop"])
     
     else:  # SHORT position
         result['target1'] = current_price - (atr * 1.5)
         result['target2'] = current_price - (atr * 3)
         result['target3'] = max(current_price - (atr * 5), sr_levels['nearest_support'])
+        # ✅ Round targets to NSE tick size
+        result["target1"] = round_to_tick_size(result["target1"])
+        result["target2"] = round_to_tick_size(result["target2"])
+        result["target3"] = round_to_tick_size(result["target3"])
         
         if pnl_percent >= trail_trigger * 5:
             atr_trail = current_price + (atr * 1.0)
@@ -2066,6 +2107,9 @@ def calculate_dynamic_levels(df, entry_price, current_price, stop_loss, position
         result['should_trail'] = result['trail_stop'] < stop_loss
         result['trail_improvement'] = stop_loss - result['trail_stop'] if result['should_trail'] else 0
         result['trail_improvement_pct'] = (result['trail_improvement'] / entry_price * 100) if result['should_trail'] else 0
+        
+        # ✅ Round trail_stop to NSE tick size
+        result["trail_stop"] = round_to_tick_size(result["trail_stop"])
     
     return result
 
@@ -2970,6 +3014,9 @@ def update_sheet_stop_loss(ticker, new_sl, reason, send_email_alert=True, email_
         # Get old SL value before updating
         old_sl = sheet.cell(row, sl_col).value
         
+        
+        # ✅ Round to NSE tick size before updating
+        new_sl = round_to_tick_size(new_sl)
         # Update the cell
         sheet.update_cell(row, sl_col, new_sl)
         
@@ -3074,6 +3121,9 @@ def update_sheet_target(ticker, new_target, target_num, reason, send_email_alert
         # Get old target value before updating
         old_target = sheet.cell(row, target_col).value
         
+        
+        # ✅ Round to NSE tick size before updating
+        new_target = round_to_tick_size(new_target)
         # Update the cell
         sheet.update_cell(row, target_col, new_target)
         
