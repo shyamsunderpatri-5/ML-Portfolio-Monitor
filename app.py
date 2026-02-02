@@ -2883,6 +2883,7 @@ def validate_portfolio(df):
             sl = float(row['Stop_Loss'])
             target = float(row['Target_1'])
             position = str(row['Position']).upper().strip()
+            status = str(row['Status']).upper().strip()
         except (ValueError, TypeError) as e:
             errors.append(f"❌ {ticker}: Invalid number format - {e}")
             continue
@@ -2901,16 +2902,17 @@ def validate_portfolio(df):
             continue
         
         # Validate levels based on position type
-        if position == 'LONG':
-            if entry <= sl:
-                errors.append(f"❌ {ticker} (LONG): Entry (₹{entry}) must be > Stop Loss (₹{sl})")
-            if target <= entry:
-                warnings.append(f"⚠️ {ticker} (LONG): Target (₹{target}) should be > Entry (₹{entry})")
-        else:  # SHORT
-            if entry >= sl:
-                errors.append(f"❌ {ticker} (SHORT): Entry (₹{entry}) must be < Stop Loss (₹{sl})")
-            if target >= entry:
-                warnings.append(f"⚠️ {ticker} (SHORT): Target (₹{target}) should be < Entry (₹{entry})")
+        if status == 'PENDING':
+            if position == 'LONG':
+                if entry <= sl: 
+                    errors.append(f"❌ {ticker} (LONG): Entry (₹{entry}) must be > Stop Loss (₹{sl})")
+                if target <= entry:
+                    warnings.append(f"⚠️ {ticker} (LONG): Target (₹{target}) should be > Entry (₹{entry})")
+            else:  # SHORT
+                if entry >= sl:
+                    errors.append(f"❌ {ticker} (SHORT): Entry (₹{entry}) must be < Stop Loss (₹{sl})")
+                if target >= entry:
+                    warnings.append(f"⚠️ {ticker} (SHORT): Target (₹{target}) should be < Entry (₹{entry})")
         
         # Check quantity if present
         if 'Quantity' in df.columns:
