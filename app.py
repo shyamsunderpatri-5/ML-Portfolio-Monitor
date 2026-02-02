@@ -42,8 +42,8 @@ except ImportError:
 
 
 # Your Google Sheets credentials file path
-CREDENTIALS_FILE = "credentials.json"  # ✅ PUT YOUR JSON FILE PATH HERE
-GOOGLE_SHEET_NAME = "my_portfolio"  # ✅ PUT YOUR SHEET NAME HERE
+service_account_info = json.loads(os.environ.get('GCP_SA_KEY'))
+credentials = service_account.Credentials.from_service_account_info(service_account_info)
 
 # ============================================================================
 # SAFE UTILITY FUNCTIONS
