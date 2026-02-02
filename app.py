@@ -40,10 +40,19 @@ except ImportError:
     HAS_GSPREAD = False
     st.warning("⚠️ Install gspread: pip install gspread google-auth")
 
-
-# Your Google Sheets credentials file path
-service_account_info = json.loads(os.environ.get('GCP_SA_KEY'))
-credentials = service_account.Credentials.from_service_account_info(service_account_info)
+# ✅ FIX: Get credentials from Streamlit Secrets/Environment
+try:
+    if 'GCP_SA_KEY' in os.environ:
+        # For Streamlit Cloud/GitHub Actions
+        service_account_info = json.loads(os.environ.get('GCP_SA_KEY'))
+        credentials = Credentials.from_service_account_info(
+            service_account_info, 
+            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        )
+    else:
+        st.error("❌ GCP_SA_KEY not found in Environment/Secrets")
+except Exception as e:
+    st.error(f"❌ Failed to load credentials: {e}")
 
 # ============================================================================
 # SAFE UTILITY FUNCTIONS
@@ -2920,40 +2929,13 @@ def validate_portfolio(df):
 # ============================================================================
 
 def get_google_sheet_connection():
-    """
-    Connect to Google Sheets using service account credentials
-    Returns: (worksheet, success_status)
-    """
-    if not HAS_GSPREAD:
-        return None, "gspread not installed"
-    
     try:
-        # Define the scopes
-        SCOPES = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        
-        # Load credentials
-        creds = Credentials.from_service_account_file(
-            CREDENTIALS_FILE,
-            scopes=SCOPES
-        )
-        
-        # Authorize the client
-        client = gspread.authorize(creds)
-        
-        # Open the sheet
-        sheet = client.open(GOOGLE_SHEET_NAME).sheet1
-        
-        return sheet, "success"
-    
-    except FileNotFoundError:
-        return None, f"Credentials file not found: {CREDENTIALS_FILE}"
-    except gspread.SpreadsheetNotFound:
-        return None, f"Spreadsheet '{GOOGLE_SHEET_NAME}' not found. Check the name matches exactly."
+        # ✅ FIX: Use the 'credentials' object created at the top of the script
+        gc = gspread.authorize(credentials)
+        sh = gc.open("YOUR_SHEET_NAME") # Ensure this matches your Sheet name
+        return sh.sheet1, "success"
     except Exception as e:
-        return None, f"Connection error: {str(e)}"
+        return None, str(e)
 
 
 def update_sheet_stop_loss(ticker, new_sl, reason):
