@@ -34,11 +34,12 @@ except ImportError:
 
 try:
     import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
+    from google.oauth2.service_account import Credentials
     HAS_GSPREAD = True
 except ImportError:
     HAS_GSPREAD = False
-    st.warning("⚠️ Install gspread for auto-update: pip install gspread oauth2client")
+    st.warning("⚠️ Install gspread: pip install gspread google-auth")
+
 
 # Your Google Sheets credentials file path
 CREDENTIALS_FILE = "credentials.json"  # ✅ PUT YOUR JSON FILE PATH HERE
@@ -2927,23 +2928,30 @@ def get_google_sheet_connection():
         return None, "gspread not installed"
     
     try:
-        # Define the scope
-        scope = ['https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive']
+        # Define the scopes
+        SCOPES = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
         
-        # Add credentials to the account
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+        # Load credentials
+        creds = Credentials.from_service_account_file(
+            CREDENTIALS_FILE,
+            scopes=SCOPES
+        )
         
-        # Authorize the clientsheet
+        # Authorize the client
         client = gspread.authorize(creds)
         
-        # Get the sheet
+        # Open the sheet
         sheet = client.open(GOOGLE_SHEET_NAME).sheet1
         
         return sheet, "success"
     
     except FileNotFoundError:
         return None, f"Credentials file not found: {CREDENTIALS_FILE}"
+    except gspread.SpreadsheetNotFound:
+        return None, f"Spreadsheet '{GOOGLE_SHEET_NAME}' not found. Check the name matches exactly."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
