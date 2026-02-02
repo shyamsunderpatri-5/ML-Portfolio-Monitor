@@ -2940,9 +2940,9 @@ def get_google_sheet_connection():
         return None, str(e)
 
 
-def update_sheet_stop_loss(ticker, new_sl, reason):
+def update_sheet_stop_loss(ticker, new_sl, reason, send_email_alert=True, email_settings=None, result=None):
     """
-    Update Stop Loss in Google Sheet
+    Update Stop Loss in Google Sheet and send email notification
     Returns: (success, message)
     """
     sheet, status = get_google_sheet_connection()
@@ -2959,8 +2959,7 @@ def update_sheet_stop_loss(ticker, new_sl, reason):
         
         row = cell.row
         
-        # Find Stop_Loss column (assuming it's column D, adjust if needed)
-        # You can also use sheet.find() to locate the column header
+        # Find Stop_Loss column
         headers = sheet.row_values(1)
         
         try:
@@ -2968,13 +2967,73 @@ def update_sheet_stop_loss(ticker, new_sl, reason):
         except ValueError:
             sl_col = 4  # Default to column D if not found
         
+        # Get old SL value before updating
+        old_sl = sheet.cell(row, sl_col).value
+        
         # Update the cell
         sheet.update_cell(row, sl_col, new_sl)
         
         # Log the update
-        log_message = f"Updated {ticker} SL to ₹{new_sl:.2f} - {reason}"
+        log_message = f"🔄 AUTO-UPDATED {ticker} SL: ₹{old_sl} → ₹{new_sl:.2f} - {reason}"
         logger.info(log_message)
         log_email(log_message)
+        
+        # 🆕 SEND EMAIL NOTIFICATION
+        if send_email_alert and email_settings and result:
+            if email_settings.get('email_on_sl_change', True):
+                sender = email_settings.get('sender_email')
+                password = email_settings.get('sender_password')
+                recipient = email_settings.get('recipient_email')
+                
+                if sender and password and recipient:
+                    subject = f"🔄 Stop Loss Updated - {ticker}"
+                    
+                    html_content = f"""
+                    <html>
+                    <body style="font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa;">
+                        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                            <div style="background: #17a2b8; color: white; padding: 20px; text-align: center;">
+                                <h1 style="margin: 0;">🔄 Stop Loss Updated</h1>
+                                <p style="margin: 10px 0 0 0; font-size: 1.2em;">{ticker}</p>
+                            </div>
+                            <div style="padding: 20px;">
+                                <div style="background: #e7f3ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #17a2b8;">
+                                    <p style="margin: 0; font-size: 1.1em;"><strong>Old Stop Loss:</strong> ₹{old_sl}</p>
+                                    <p style="margin: 10px 0 0 0; font-size: 1.2em; color: #17a2b8;"><strong>New Stop Loss:</strong> ₹{new_sl:.2f}</p>
+                                    <p style="margin: 10px 0 0 0;"><strong>Reason:</strong> {reason}</p>
+                                </div>
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Current Price</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">₹{result['current_price']:,.2f}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Entry Price</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">₹{result['entry_price']:,.2f}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Current P&L</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right; color: {'#28a745' if result['pnl_percent'] >= 0 else '#dc3545'};">
+                                            {result['pnl_percent']:+.2f}% (₹{result['pnl_amount']:+,.0f})
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Trail Action</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{result.get('trail_action', 'N/A')}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 0.9em; color: #666;">
+                                <p style="margin: 0;">Smart Portfolio Monitor - Auto Update</p>
+                                <p style="margin: 5px 0 0 0;">{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')} IST</p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    send_email_alert(subject, html_content, sender, password, recipient)
+                    log_email(f"📧 Email sent for SL update: {ticker}")
         
         return True, log_message
     
@@ -2983,10 +3042,9 @@ def update_sheet_stop_loss(ticker, new_sl, reason):
         logger.error(error_msg)
         return False, error_msg
 
-
-def update_sheet_target(ticker, new_target, target_num, reason):
+def update_sheet_target(ticker, new_target, target_num, reason, send_email_alert=True, email_settings=None, result=None):
     """
-    Update Target in Google Sheet
+    Update Target in Google Sheet and send email notification
     target_num: 1 or 2
     Returns: (success, message)
     """
@@ -3013,12 +3071,68 @@ def update_sheet_target(ticker, new_target, target_num, reason):
         except ValueError:
             target_col = 6 if target_num == 1 else 7  # Default columns
         
+        # Get old target value before updating
+        old_target = sheet.cell(row, target_col).value
+        
         # Update the cell
         sheet.update_cell(row, target_col, new_target)
         
-        log_message = f"Updated {ticker} Target {target_num} to ₹{new_target:.2f} - {reason}"
+        log_message = f"🎯 AUTO-UPDATED {ticker} Target {target_num}: ₹{old_target} → ₹{new_target:.2f} - {reason}"
         logger.info(log_message)
         log_email(log_message)
+        
+        # 🆕 SEND EMAIL NOTIFICATION
+        if send_email_alert and email_settings and result:
+            if email_settings.get('email_on_target_change', True):
+                sender = email_settings.get('sender_email')
+                password = email_settings.get('sender_password')
+                recipient = email_settings.get('recipient_email')
+                
+                if sender and password and recipient:
+                    subject = f"🎯 Target Extended - {ticker}"
+                    
+                    html_content = f"""
+                    <html>
+                    <body style="font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa;">
+                        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                            <div style="background: #28a745; color: white; padding: 20px; text-align: center;">
+                                <h1 style="margin: 0;">🎯 Target Extended</h1>
+                                <p style="margin: 10px 0 0 0; font-size: 1.2em;">{ticker}</p>
+                            </div>
+                            <div style="padding: 20px;">
+                                <div style="background: #d4edda; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #28a745;">
+                                    <p style="margin: 0; font-size: 1.1em;"><strong>Old Target {target_num}:</strong> ₹{old_target}</p>
+                                    <p style="margin: 10px 0 0 0; font-size: 1.2em; color: #28a745;"><strong>New Target {target_num}:</strong> ₹{new_target:.2f}</p>
+                                    <p style="margin: 10px 0 0 0;"><strong>Reason:</strong> {reason}</p>
+                                </div>
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Current Price</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">₹{result['current_price']:,.2f}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Upside Score</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{result.get('upside_score', 0):.0f}/100</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Potential Gain</strong></td>
+                                        <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">
+                                            {((new_target - result['current_price']) / result['current_price'] * 100):+.2f}%
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 0.9em; color: #666;">
+                                <p style="margin: 0;">Smart Portfolio Monitor - Auto Update</p>
+                                <p style="margin: 5px 0 0 0;">{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')} IST</p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    """
+                    
+                    send_email_alert(subject, html_content, sender, password, recipient)
+                    log_email(f"📧 Email sent for Target update: {ticker}")
         
         return True, log_message
     
@@ -3027,10 +3141,10 @@ def update_sheet_target(ticker, new_target, target_num, reason):
         logger.error(error_msg)
         return False, error_msg
 
-
-def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason):
+def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason, send_email_alert=True, email_settings=None, result=None):
     """
     Mark position as INACTIVE and record realized P&L
+    Sends email notification on exit
     Returns: (success, message)
     """
     sheet, status = get_google_sheet_connection()
@@ -3062,15 +3176,111 @@ def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason):
             pnl_col = len(headers) + 1
             sheet.update_cell(1, pnl_col, 'Realized_PnL')  # Add header
         
+        # Find Exit_Date column (add if doesn't exist)
+        try:
+            exit_date_col = headers.index('Exit_Date') + 1
+        except ValueError:
+            exit_date_col = len(headers) + 2
+            sheet.update_cell(1, exit_date_col, 'Exit_Date')
+        
+        # Find Exit_Reason column (add if doesn't exist)
+        try:
+            exit_reason_col = headers.index('Exit_Reason') + 1
+        except ValueError:
+            exit_reason_col = len(headers) + 3
+            sheet.update_cell(1, exit_reason_col, 'Exit_Reason')
+        
         # Update Status to INACTIVE
         sheet.update_cell(row, status_col, 'INACTIVE')
         
         # Update Realized P&L
         sheet.update_cell(row, pnl_col, pnl_amount)
         
-        log_message = f"Marked {ticker} INACTIVE | Exit: ₹{exit_price:.2f} | P&L: ₹{pnl_amount:+,.0f} | Reason: {exit_reason}"
+        # Update Exit Date
+        exit_date = get_ist_now().strftime('%Y-%m-%d')
+        sheet.update_cell(row, exit_date_col, exit_date)
+        
+        # Update Exit Reason
+        sheet.update_cell(row, exit_reason_col, exit_reason)
+        
+        log_message = f"🚪 POSITION CLOSED: {ticker} | Exit: ₹{exit_price:.2f} | P&L: ₹{pnl_amount:+,.0f} | Reason: {exit_reason}"
         logger.info(log_message)
         log_email(log_message)
+        
+        # 🆕 SEND EMAIL NOTIFICATION
+        if send_email_alert and email_settings and result:
+            sender = email_settings.get('sender_email')
+            password = email_settings.get('sender_password')
+            recipient = email_settings.get('recipient_email')
+            
+            if sender and password and recipient:
+                # Determine email color based on exit reason
+                if pnl_amount > 0:
+                    header_color = "#28a745"  # Green for profit
+                    status_emoji = "✅"
+                else:
+                    header_color = "#dc3545"  # Red for loss
+                    status_emoji = "❌"
+                
+                subject = f"{status_emoji} Position Closed - {ticker} | P&L: ₹{pnl_amount:+,.0f}"
+                
+                html_content = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa;">
+                    <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                        <div style="background: {header_color}; color: white; padding: 20px; text-align: center;">
+                            <h1 style="margin: 0;">{status_emoji} Position Closed</h1>
+                            <p style="margin: 10px 0 0 0; font-size: 1.2em;">{ticker}</p>
+                        </div>
+                        <div style="padding: 20px;">
+                            <div style="background: {'#d4edda' if pnl_amount > 0 else '#f8d7da'}; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid {header_color};">
+                                <p style="margin: 0; font-size: 1.3em; color: {header_color};"><strong>Realized P&L: ₹{pnl_amount:+,.0f}</strong></p>
+                                <p style="margin: 10px 0 0 0;"><strong>Exit Reason:</strong> {exit_reason}</p>
+                            </div>
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Position Type</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{'📈 LONG' if result['position_type'] == 'LONG' else '📉 SHORT'}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Entry Price</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">₹{result['entry_price']:,.2f}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Exit Price</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">₹{exit_price:,.2f}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Quantity</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{result['quantity']} shares</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>P&L %</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right; color: {header_color}; font-weight: bold;">
+                                        {result['pnl_percent']:+.2f}%
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Holding Period</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{result.get('holding_days', 0)} days</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Exit Date</strong></td>
+                                    <td style="padding: 10px; border-bottom: 1px solid #eee; text-align: right;">{exit_date}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div style="background: #f8f9fa; padding: 15px; text-align: center; font-size: 0.9em; color: #666;">
+                            <p style="margin: 0;">Smart Portfolio Monitor - Position Closed</p>
+                            <p style="margin: 5px 0 0 0;">{get_ist_now().strftime('%Y-%m-%d %H:%M:%S')} IST</p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                """
+                
+                send_email_alert(subject, html_content, sender, password, recipient)
+                log_email(f"📧 Email sent for position closure: {ticker}")
         
         return True, log_message
     
@@ -3078,6 +3288,7 @@ def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason):
         error_msg = f"Error marking {ticker} inactive: {str(e)}"
         logger.error(error_msg)
         return False, error_msg
+
 # ============================================================================
 # EMAIL ALERT FUNCTIONS
 # ============================================================================
@@ -4631,52 +4842,76 @@ def main():
                 st.divider()
                 st.markdown("##### 🔄 Auto-Update Actions")
                 
-                update_col1, update_col2 = st.columns(2)
+                # ============================================================================
+                # 🆕 AUTOMATIC UPDATES - NO BUTTONS NEEDED
+                # ============================================================================
                 
-                with update_col1:
-                    # ✅ FEATURE 1: Update SL/Target in Sheet
-                    if r['should_trail'] and r['trail_stop'] != r['stop_loss']:
-                        if st.button(
-                            f"📝 Update SL to ₹{r['trail_stop']:.2f}",
-                            key=f"update_sl_{r['ticker']}",
-                            use_container_width=True,
-                            type="primary"
-                        ):
-                            success, msg = update_sheet_stop_loss(
-                                r['ticker'],
-                                r['trail_stop'],
-                                r.get('trail_reason', 'Trail stop recommended')
-                            )
-                            if success:
-                                st.success(f"✅ {msg}")
-                                time.sleep(2)
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {msg}")
+                auto_update_col1, auto_update_col2 = st.columns(2)
+                
+                with auto_update_col1:
+                    st.markdown("**📊 Automatic Updates**")
                     
-                    # Update Target if new target suggested
+                    # AUTO-UPDATE STOP LOSS
+                    if r['should_trail'] and r['trail_stop'] != r['stop_loss']:
+                        # Check if we already updated today (to avoid multiple updates)
+                        update_key = f"sl_updated_{r['ticker']}_{get_ist_now().strftime('%Y%m%d')}"
+                        
+                        if update_key not in st.session_state:
+                            with st.spinner(f"Updating SL for {r['ticker']}..."):
+                                success, msg = update_sheet_stop_loss(
+                                    r['ticker'],
+                                    r['trail_stop'],
+                                    r.get('trail_reason', 'Trail stop recommended'),
+                                    send_email_alert=True,
+                                    email_settings=email_settings,
+                                    result=r
+                                )
+                                
+                                if success:
+                                    st.success(f"✅ {msg}")
+                                    st.session_state[update_key] = True
+                                    # Update the current result to reflect new SL
+                                    r['stop_loss'] = r['trail_stop']
+                                else:
+                                    st.warning(f"⚠️ {msg}")
+                        else:
+                            st.info(f"✅ SL already updated to ₹{r['trail_stop']:.2f} today")
+                    
+                    # AUTO-UPDATE TARGET
                     if r['target1_hit'] and r['upside_score'] >= 60 and r['new_target'] != r['target2']:
-                        if st.button(
-                            f"📝 Update Target 2 to ₹{r['new_target']:.2f}",
-                            key=f"update_t2_{r['ticker']}",
-                            use_container_width=True
-                        ):
-                            success, msg = update_sheet_target(
-                                r['ticker'],
-                                r['new_target'],
-                                2,
-                                f"Extended target based on {r['upside_score']}% upside score"
-                            )
-                            if success:
-                                st.success(f"✅ {msg}")
-                                time.sleep(2)
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {msg}")
+                        update_key = f"target_updated_{r['ticker']}_{get_ist_now().strftime('%Y%m%d')}"
+                        
+                        if update_key not in st.session_state:
+                            with st.spinner(f"Updating Target for {r['ticker']}..."):
+                                success, msg = update_sheet_target(
+                                    r['ticker'],
+                                    r['new_target'],
+                                    2,
+                                    f"Extended target based on {r['upside_score']}% upside score",
+                                    send_email_alert=True,
+                                    email_settings=email_settings,
+                                    result=r
+                                )
+                                
+                                if success:
+                                    st.success(f"✅ {msg}")
+                                    st.session_state[update_key] = True
+                                    # Update the current result to reflect new target
+                                    r['target2'] = r['new_target']
+                                else:
+                                    st.warning(f"⚠️ {msg}")
+                        else:
+                            st.info(f"✅ Target already updated to ₹{r['new_target']:.2f} today")
                 
-                with update_col2:
-                    # ✅ FEATURE 2: Mark Position Inactive
-                    exit_conditions = r['overall_action'] in ['EXIT', 'EXIT_EARLY', 'BOOK_PROFITS'] or r['sl_hit'] or r['target2_hit']
+                with auto_update_col2:
+                    st.markdown("**🚪 Manual Exit Control**")
+                    
+                    # MANUAL EXIT BUTTON (ONLY THIS REMAINS AS BUTTON)
+                    exit_conditions = (
+                        r['overall_action'] in ['EXIT', 'EXIT_EARLY', 'BOOK_PROFITS'] or 
+                        r['sl_hit'] or 
+                        r['target2_hit']
+                    )
                     
                     if exit_conditions:
                         exit_reason = ""
@@ -4686,45 +4921,59 @@ def main():
                             exit_reason = "Target 2 Achieved"
                         elif r['overall_action'] == 'EXIT_EARLY':
                             exit_reason = f"Early Exit - SL Risk {r['sl_risk']}%"
+                        elif r['overall_action'] == 'EXIT':
+                            exit_reason = "Exit Recommended"
                         else:
-                            exit_reason = "Target Achieved"
+                            exit_reason = "Book Profits"
                         
-                        button_label = f"🚪 Mark INACTIVE & Record P&L (₹{r['pnl_amount']:+,.0f})"
+                        button_label = f"🚪 Mark INACTIVE (₹{r['pnl_amount']:+,.0f})"
                         button_type = "primary" if r['sl_hit'] or r['overall_action'] == 'EXIT_EARLY' else "secondary"
                         
                         if st.button(
                             button_label,
                             key=f"exit_{r['ticker']}",
                             use_container_width=True,
-                            type=button_type
+                            type=button_type,
+                            help=f"Click to close position and record P&L. Email will be sent."
                         ):
-                            success, msg = mark_position_inactive(
-                                r['ticker'],
-                                r['current_price'],
-                                r['pnl_amount'],
-                                exit_reason
-                            )
-                            if success:
-                                st.success(f"✅ {msg}")
-                                
-                                # Also log the trade in app history
-                                log_trade(
+                            with st.spinner(f"Closing position for {r['ticker']}..."):
+                                success, msg = mark_position_inactive(
                                     r['ticker'],
-                                    r['entry_price'],
                                     r['current_price'],
-                                    r['quantity'],
-                                    r['position_type'],
-                                    exit_reason
+                                    r['pnl_amount'],
+                                    exit_reason,
+                                    send_email_alert=True,
+                                    email_settings=email_settings,
+                                    result=r
                                 )
                                 
-                                st.balloons() if r['pnl_amount'] > 0 else None
-                                time.sleep(3)
-                                st.rerun()
-                            else:
-                                st.error(f"❌ {msg}")
+                                if success:
+                                    st.success(f"✅ {msg}")
+                                    st.success("📧 Email notification sent!")
+                                    
+                                    # Log the trade in app history
+                                    log_trade(
+                                        r['ticker'],
+                                        r['entry_price'],
+                                        r['current_price'],
+                                        r['quantity'],
+                                        r['position_type'],
+                                        exit_reason
+                                    )
+                                    
+                                    if r['pnl_amount'] > 0:
+                                        st.balloons()
+                                    
+                                    time.sleep(3)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ {msg}")
                         
-                        # Show what will happen
-                        st.caption(f"Will update sheet: Status → INACTIVE, P&L → ₹{r['pnl_amount']:+,.0f}")                
+                        # Show details
+                        st.caption(f"📊 Status → INACTIVE | P&L → ₹{r['pnl_amount']:+,.0f}")
+                        st.caption(f"📧 Email will be sent on confirmation")
+                    else:
+                        st.info("No exit conditions met")               
     
     # =========================================================================
     # TAB 2: CHARTS
