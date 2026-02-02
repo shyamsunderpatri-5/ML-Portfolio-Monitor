@@ -42,7 +42,7 @@ except ImportError:
 
 # Your Google Sheets credentials file path
 CREDENTIALS_FILE = "credentials.json"  # ✅ PUT YOUR JSON FILE PATH HERE
-GOOGLE_SHEET_NAME = "my_portfolio   "  # ✅ PUT YOUR SHEET NAME HERE
+GOOGLE_SHEET_NAME = "my_portfolio"  # ✅ PUT YOUR SHEET NAME HERE
 
 # ============================================================================
 # SAFE UTILITY FUNCTIONS
