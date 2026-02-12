@@ -119,65 +119,680 @@ st.set_page_config(
 # ============================================================================
 st.markdown("""
 <style>
+    /* ================================================================
+       PROFESSIONAL TRADING TERMINAL THEME
+       ================================================================ */
+    
+    /* ---------- Global Background & Font ---------- */
+    .stApp {
+        background-color: #0a0e17;
+    }
+    
+    section[data-testid="stSidebar"] {
+        background-color: #0f1419;
+        border-right: 1px solid #1e2a3a;
+    }
+    
+    section[data-testid="stSidebar"] * {
+        color: #c8d6e5 !important;
+    }
+    
+    section[data-testid="stSidebar"] .stMarkdown h2,
+    section[data-testid="stSidebar"] .stMarkdown h3 {
+        color: #00d4aa !important;
+    }
+    
+    /* ---------- Typography ---------- */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Inter', 'SF Pro Display', -apple-system, sans-serif !important;
+        letter-spacing: -0.02em;
+    }
+    
+    p, span, div, label, td, th {
+        font-family: 'Inter', 'SF Pro Text', -apple-system, sans-serif !important;
+    }
+    
+    /* ---------- Main Header ---------- */
     .main-header {
-        font-size: 2.5rem;
+        font-size: 1.8rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #00d4aa 0%, #00b4d8 50%, #7b68ee 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
-        padding: 1rem 0;
+        padding: 0.5rem 0;
+        letter-spacing: -0.03em;
+        margin-bottom: 0;
     }
-    .critical-box {
-        background: linear-gradient(135deg, #dc3545, #c82333);
+    
+    .sub-header {
+        text-align: center;
+        color: #4a5568;
+        font-size: 0.8rem;
+        margin-top: -5px;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+    }
+    
+    /* ---------- Market Status Bar ---------- */
+    .market-bar {
+        background: linear-gradient(90deg, #0f1419 0%, #141c27 100%);
+        border: 1px solid #1e2a3a;
+        border-radius: 12px;
+        padding: 12px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 10px 0;
+    }
+    
+    .market-bar-item {
+        text-align: center;
+        padding: 0 15px;
+        border-right: 1px solid #1e2a3a;
+    }
+    
+    .market-bar-item:last-child {
+        border-right: none;
+    }
+    
+    .market-bar-label {
+        font-size: 0.65rem;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 2px;
+    }
+    
+    .market-bar-value {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #e2e8f0;
+    }
+    
+    /* ---------- Health Score Ring ---------- */
+    .health-ring {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: 800;
         color: white;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        font-weight: bold;
-        margin: 10px 0;
+        margin: 0 auto;
+        position: relative;
     }
-    .success-box {
-        background: linear-gradient(135deg, #28a745, #218838);
+    
+    /* ---------- Portfolio Summary Cards ---------- */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+        margin: 15px 0;
+    }
+    
+    .summary-card {
+        background: linear-gradient(145deg, #141c27, #0f1419);
+        border: 1px solid #1e2a3a;
+        border-radius: 10px;
+        padding: 14px 16px;
+        text-align: center;
+        transition: all 0.2s ease;
+    }
+    
+    .summary-card:hover {
+        border-color: #00d4aa;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 212, 170, 0.1);
+    }
+    
+    .summary-card-label {
+        font-size: 0.65rem;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 6px;
+    }
+    
+    .summary-card-value {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #e2e8f0;
+    }
+    
+    .summary-card-delta {
+        font-size: 0.75rem;
+        margin-top: 4px;
+    }
+    
+    /* ---------- Position Cards ---------- */
+    .position-card {
+        background: linear-gradient(145deg, #141c27, #0f1419);
+        border: 1px solid #1e2a3a;
+        border-radius: 12px;
+        padding: 0;
+        margin: 8px 0;
+        overflow: hidden;
+        transition: all 0.2s ease;
+    }
+    
+    .position-card:hover {
+        border-color: #2d3a4a;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .position-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        border-bottom: 1px solid #1e2a3a;
+    }
+    
+    .position-ticker {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #e2e8f0;
+        letter-spacing: 0.02em;
+    }
+    
+    .position-badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+    
+    .badge-long {
+        background: rgba(0, 212, 170, 0.15);
+        color: #00d4aa;
+        border: 1px solid rgba(0, 212, 170, 0.3);
+    }
+    
+    .badge-short {
+        background: rgba(255, 107, 107, 0.15);
+        color: #ff6b6b;
+        border: 1px solid rgba(255, 107, 107, 0.3);
+    }
+    
+    .position-body {
+        padding: 14px 18px;
+    }
+    
+    .position-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+    }
+    
+    .position-metric {
+        text-align: center;
+    }
+    
+    .position-metric-label {
+        font-size: 0.6rem;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+    
+    .position-metric-value {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #e2e8f0;
+        margin-top: 2px;
+    }
+    
+    /* ---------- Status Badges ---------- */
+    .status-critical {
+        background: linear-gradient(135deg, #ff4757, #ff3838);
         color: white;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        font-weight: bold;
-        margin: 10px 0;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        display: inline-block;
+        animation: pulse-critical 2s infinite;
     }
-    .warning-box {
-        background: linear-gradient(135deg, #ffc107, #e0a800);
-        color: black;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        font-weight: bold;
-        margin: 10px 0;
+    
+    @keyframes pulse-critical {
+        0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); }
+        50% { opacity: 0.9; box-shadow: 0 0 0 8px rgba(255, 71, 87, 0); }
     }
-    .info-box {
-        background: linear-gradient(135deg, #17a2b8, #138496);
+    
+    .status-warning {
+        background: linear-gradient(135deg, #ffa502, #ff9f43);
+        color: #1a1a2e;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        display: inline-block;
+    }
+    
+    .status-success {
+        background: linear-gradient(135deg, #00d4aa, #00b894);
+        color: #1a1a2e;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        display: inline-block;
+    }
+    
+    .status-info {
+        background: linear-gradient(135deg, #00b4d8, #0096c7);
         color: white;
-        padding: 15px;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        display: inline-block;
+    }
+    
+    .status-neutral {
+        background: linear-gradient(135deg, #2d3a4a, #1e2a3a);
+        color: #a0aec0;
+        padding: 4px 12px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        display: inline-block;
+    }
+    
+    /* ---------- Alert Boxes ---------- */
+    .alert-critical {
+        background: linear-gradient(135deg, rgba(255, 71, 87, 0.12), rgba(255, 56, 56, 0.08));
+        border: 1px solid rgba(255, 71, 87, 0.3);
+        border-left: 4px solid #ff4757;
+        color: #ff6b6b;
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin: 8px 0;
+        font-size: 0.9rem;
+    }
+    
+    .alert-warning {
+        background: linear-gradient(135deg, rgba(255, 165, 2, 0.12), rgba(255, 159, 67, 0.08));
+        border: 1px solid rgba(255, 165, 2, 0.3);
+        border-left: 4px solid #ffa502;
+        color: #ffc048;
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin: 8px 0;
+        font-size: 0.9rem;
+    }
+    
+    .alert-success {
+        background: linear-gradient(135deg, rgba(0, 212, 170, 0.12), rgba(0, 184, 148, 0.08));
+        border: 1px solid rgba(0, 212, 170, 0.3);
+        border-left: 4px solid #00d4aa;
+        color: #00d4aa;
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin: 8px 0;
+        font-size: 0.9rem;
+    }
+    
+    .alert-info {
+        background: linear-gradient(135deg, rgba(0, 180, 216, 0.12), rgba(0, 150, 199, 0.08));
+        border: 1px solid rgba(0, 180, 216, 0.3);
+        border-left: 4px solid #00b4d8;
+        color: #48dbfb;
+        padding: 14px 18px;
+        border-radius: 8px;
+        margin: 8px 0;
+        font-size: 0.9rem;
+    }
+    
+    /* ---------- Score Gauges ---------- */
+    .score-gauge {
+        background: #0f1419;
+        border: 1px solid #1e2a3a;
         border-radius: 10px;
+        padding: 14px;
         text-align: center;
-        font-weight: bold;
+    }
+    
+    .score-value {
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1;
+        margin-bottom: 4px;
+    }
+    
+    .score-label {
+        font-size: 0.65rem;
+        color: #4a5568;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+    
+    .score-bar {
+        height: 4px;
+        background: #1e2a3a;
+        border-radius: 2px;
+        margin-top: 8px;
+        overflow: hidden;
+    }
+    
+    .score-bar-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 0.5s ease;
+    }
+    
+    /* ---------- Level Indicators ---------- */
+    .level-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid #1e2a3a;
+    }
+    
+    .level-label {
+        font-size: 0.75rem;
+        color: #4a5568;
+    }
+    
+    .level-value {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #e2e8f0;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+    }
+    
+    .level-tag {
+        font-size: 0.6rem;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: 600;
+    }
+    
+    /* ---------- P&L Colors ---------- */
+    .pnl-positive {
+        color: #00d4aa !important;
+    }
+    
+    .pnl-negative {
+        color: #ff4757 !important;
+    }
+    
+    .pnl-neutral {
+        color: #a0aec0 !important;
+    }
+    
+    /* ---------- Action Buttons ---------- */
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        transition: all 0.2s ease;
+        border: 1px solid #1e2a3a;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #00d4aa, #00b894) !important;
+        color: #0a0e17 !important;
+        border: none !important;
+    }
+    
+    .stButton > button[kind="secondary"] {
+        background: #141c27 !important;
+        color: #e2e8f0 !important;
+        border: 1px solid #2d3a4a !important;
+    }
+    
+    /* ---------- Recommendation Boxes ---------- */
+    .rec-exit {
+        background: linear-gradient(135deg, rgba(255, 71, 87, 0.2), rgba(255, 56, 56, 0.1));
+        border: 1px solid rgba(255, 71, 87, 0.4);
+        color: #ff6b6b;
+        padding: 12px 18px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        letter-spacing: 0.05em;
         margin: 10px 0;
     }
-    .metric-card {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 4px solid #667eea;
+    
+    .rec-hold {
+        background: linear-gradient(135deg, rgba(0, 180, 216, 0.2), rgba(0, 150, 199, 0.1));
+        border: 1px solid rgba(0, 180, 216, 0.4);
+        color: #48dbfb;
+        padding: 12px 18px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        letter-spacing: 0.05em;
+        margin: 10px 0;
+    }
+    
+    .rec-profit {
+        background: linear-gradient(135deg, rgba(0, 212, 170, 0.2), rgba(0, 184, 148, 0.1));
+        border: 1px solid rgba(0, 212, 170, 0.4);
+        color: #00d4aa;
+        padding: 12px 18px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        letter-spacing: 0.05em;
+        margin: 10px 0;
+    }
+    
+    .rec-trail {
+        background: linear-gradient(135deg, rgba(123, 104, 238, 0.2), rgba(99, 80, 214, 0.1));
+        border: 1px solid rgba(123, 104, 238, 0.4);
+        color: #9c88ff;
+        padding: 12px 18px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        letter-spacing: 0.05em;
+        margin: 10px 0;
+    }
+    
+    .rec-watch {
+        background: linear-gradient(135deg, rgba(255, 165, 2, 0.2), rgba(255, 159, 67, 0.1));
+        border: 1px solid rgba(255, 165, 2, 0.4);
+        color: #ffc048;
+        padding: 12px 18px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        letter-spacing: 0.05em;
+        margin: 10px 0;
+    }
+    
+    /* ---------- Pattern Cards ---------- */
+    .pattern-card {
+        background: #0f1419;
+        border: 1px solid #1e2a3a;
+        border-radius: 8px;
+        padding: 10px 14px;
         margin: 5px 0;
     }
-    .stExpander {
-        border: 1px solid #e0e0e0;
+    
+    .pattern-bullish {
+        border-left: 3px solid #00d4aa;
+    }
+    
+    .pattern-bearish {
+        border-left: 3px solid #ff4757;
+    }
+    
+    /* ---------- Metric Overrides (Streamlit defaults) ---------- */
+    [data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
+        font-weight: 700 !important;
+        color: #e2e8f0 !important;
+        font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        font-size: 0.7rem !important;
+        color: #4a5568 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.08em !important;
+    }
+    
+    [data-testid="stMetricDelta"] > div {
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Positive delta */
+    [data-testid="stMetricDelta"] > div[data-testid="stMetricDeltaIcon-Up"] ~ div,
+    [data-testid="stMetricDelta"] svg[data-testid="stMetricDeltaIcon-Up"] {
+        color: #00d4aa !important;
+        fill: #00d4aa !important;
+    }
+    
+    /* Negative delta */
+    [data-testid="stMetricDelta"] > div[data-testid="stMetricDeltaIcon-Down"] ~ div,
+    [data-testid="stMetricDelta"] svg[data-testid="stMetricDeltaIcon-Down"] {
+        color: #ff4757 !important;
+        fill: #ff4757 !important;
+    }
+    
+    /* ---------- Tabs ---------- */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 0px;
+        background: #0f1419;
         border-radius: 10px;
+        padding: 4px;
+        border: 1px solid #1e2a3a;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
+        color: #4a5568;
+        font-weight: 600;
+        font-size: 0.8rem;
+        padding: 8px 16px;
+        letter-spacing: 0.02em;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #00d4aa, #00b894) !important;
+        color: #0a0e17 !important;
+    }
+    
+    /* ---------- Expander ---------- */
+    .streamlit-expanderHeader {
+        background: #0f1419 !important;
+        border: 1px solid #1e2a3a !important;
+        border-radius: 8px !important;
+        color: #e2e8f0 !important;
+        font-weight: 600 !important;
+    }
+    
+    .streamlit-expanderContent {
+        background: #0f1419 !important;
+        border: 1px solid #1e2a3a !important;
+        border-top: none !important;
+    }
+    
+    /* ---------- Progress Bar ---------- */
+    .stProgress > div > div > div {
+        background: linear-gradient(90deg, #00d4aa, #00b4d8) !important;
+    }
+    
+    /* ---------- Divider ---------- */
+    hr {
+        border-color: #1e2a3a !important;
+        opacity: 0.5;
+    }
+    
+    /* ---------- Data Tables ---------- */
+    .stDataFrame {
+        border: 1px solid #1e2a3a;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    /* ---------- Emergency Blink ---------- */
+    .emergency-banner {
+        background: linear-gradient(135deg, #ff4757, #ff3838);
+        color: white;
+        padding: 14px 20px;
+        border-radius: 10px;
+        text-align: center;
+        font-weight: 700;
+        font-size: 1.1rem;
+        letter-spacing: 0.05em;
+        animation: emergency-pulse 1.5s infinite;
+        margin: 10px 0;
+    }
+    
+    @keyframes emergency-pulse {
+        0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.5); }
+        50% { opacity: 0.92; box-shadow: 0 0 0 12px rgba(255, 71, 87, 0); }
+    }
+    
+    /* ---------- Scrollbar ---------- */
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #0a0e17;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #2d3a4a;
+        border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #3d4a5a;
+    }
+    
+    /* ---------- Footer ---------- */
+    .terminal-footer {
+        text-align: center;
+        color: #2d3a4a;
+        font-size: 0.7rem;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        padding: 20px 0 10px 0;
+        border-top: 1px solid #1e2a3a;
+        margin-top: 30px;
+    }
+    
+    /* ---------- Responsive ---------- */
+    @media (max-width: 768px) {
+        .position-metrics {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        .summary-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
 </style>
 """, unsafe_allow_html=True)
-
 # ============================================================================
 # INITIALIZE SESSION STATE
 # ============================================================================
@@ -4381,25 +4996,70 @@ def main():
     # Render sidebar and get settings
     settings = render_sidebar()
     
-    # Market Status
+        # Market Status
     is_open, market_status, market_msg, market_icon = is_market_hours()
     ist_now = get_ist_now()
     
     # =========================================================================
-    # HEADER ROW (Market Status + Time + Refresh Button)
+    # PROFESSIONAL HEADER BAR
     # =========================================================================
-    col1, col2, col3 = st.columns([2, 2, 1])
     
-    with col1:
-        st.markdown(f"### {market_icon} {market_status}")
-        st.caption(market_msg)
+    # Status color mapping
+    status_color_map = {
+        'OPEN': '#00d4aa',
+        'CLOSED': '#ff4757',
+        'PRE-MARKET': '#ffa502',
+        'WEEKEND': '#4a5568'
+    }
+    status_color = status_color_map.get(market_status, '#4a5568')
     
-    with col2:
-        st.markdown(f"### 🕐 {ist_now.strftime('%H:%M:%S')} IST")
-        st.caption(ist_now.strftime('%A, %B %d, %Y'))
+    st.markdown(f"""
+    <div style='display:flex; justify-content:space-between; align-items:center; 
+                background:#0f1419; border:1px solid #1e2a3a; border-radius:12px; 
+                padding:12px 24px; margin-bottom:15px;'>
+        <div style='display:flex; align-items:center; gap:20px;'>
+            <div>
+                <span style='font-size:1.4rem; font-weight:800; 
+                      background:linear-gradient(135deg, #00d4aa, #00b4d8);
+                      -webkit-background-clip:text; -webkit-text-fill-color:transparent;'>
+                    SPM
+                </span>
+                <span style='color:#4a5568; font-size:0.65rem; margin-left:5px; 
+                      letter-spacing:0.1em;'>v6.0</span>
+            </div>
+            <div style='height:24px; width:1px; background:#1e2a3a;'></div>
+            <div>
+                <span style='display:inline-block; width:8px; height:8px; 
+                      border-radius:50%; background:{status_color}; 
+                      margin-right:6px; animation: {"blink-dot 1.5s infinite" if is_open else "none"};'></span>
+                <span style='color:{status_color}; font-weight:600; font-size:0.85rem;'>{market_status}</span>
+                <span style='color:#4a5568; font-size:0.7rem; margin-left:8px;'>{market_msg}</span>
+            </div>
+        </div>
+        <div style='display:flex; align-items:center; gap:20px;'>
+            <div style='text-align:right;'>
+                <div style='color:#e2e8f0; font-size:1.1rem; font-weight:700; 
+                     font-family:"JetBrains Mono","Fira Code",monospace;'>
+                    {ist_now.strftime('%H:%M:%S')}
+                </div>
+                <div style='color:#4a5568; font-size:0.65rem; letter-spacing:0.05em;'>
+                    {ist_now.strftime('%a, %d %b %Y')} IST
+                </div>
+            </div>
+        </div>
+    </div>
+    <style>
+        @keyframes blink-dot {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.3; }}
+        }}
+    </style>
+    """, unsafe_allow_html=True)
     
-    with col3:
-        if st.button("🔄 Refresh", use_container_width=True, type="primary"):
+    # Refresh button row
+    col_spacer, col_refresh = st.columns([5, 1])
+    with col_refresh:
+        if st.button("⟳ REFRESH", use_container_width=True, type="primary"):
             st.cache_data.clear()
             st.rerun()
     
@@ -4411,56 +5071,128 @@ def main():
     market_health = get_market_health()
     
     if market_health:
+        # Color mapping for health
+        health_color = market_health['color']
+        if market_health['health_score'] >= 70:
+            health_gradient = 'linear-gradient(135deg, #00d4aa, #00b894)'
+            ring_shadow = 'rgba(0, 212, 170, 0.3)'
+        elif market_health['health_score'] >= 50:
+            health_gradient = 'linear-gradient(135deg, #ffa502, #ff9f43)'
+            ring_shadow = 'rgba(255, 165, 2, 0.3)'
+        elif market_health['health_score'] >= 30:
+            health_gradient = 'linear-gradient(135deg, #ff9f43, #ee5a24)'
+            ring_shadow = 'rgba(238, 90, 36, 0.3)'
+        else:
+            health_gradient = 'linear-gradient(135deg, #ff4757, #ff3838)'
+            ring_shadow = 'rgba(255, 71, 87, 0.3)'
+        
+        nifty_change_color = '#00d4aa' if market_health['nifty_change'] >= 0 else '#ff4757'
+        nifty_arrow = '▲' if market_health['nifty_change'] >= 0 else '▼'
+        
         st.markdown(f"""
-        <div style='background:{market_health['color']}20; padding:20px; border-radius:12px; 
-                    border-left:5px solid {market_health['color']}; margin:15px 0;'>
-            <div style='display:flex; justify-content:space-between; align-items:center;'>
-                <div>
-                    <h2 style='margin:0; color:{market_health['color']};'>
-                        {market_health['icon']} Market Health: {market_health['status']}
-                    </h2>
-                    <p style='margin:8px 0; font-size:1.1em;'>{market_health['message']}</p>
-                    <p style='margin:8px 0; font-weight:bold; font-size:1.05em;'>{market_health['action']}</p>
-                </div>
+        <div style='background:#0f1419; border:1px solid #1e2a3a; border-radius:12px; 
+                    padding:20px 24px; margin:10px 0;'>
+            <div style='display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;'>
+                
+                <!-- Health Score Ring -->
                 <div style='text-align:center; min-width:100px;'>
-                    <h1 style='margin:0; color:{market_health['color']};'>{market_health['health_score']}</h1>
-                    <p style='margin:0; font-size:0.9em;'>Health Score</p>
+                    <div style='width:72px; height:72px; border-radius:50%; 
+                                background:{health_gradient};
+                                display:flex; align-items:center; justify-content:center;
+                                box-shadow: 0 0 20px {ring_shadow};
+                                margin:0 auto;'>
+                        <span style='font-size:1.6rem; font-weight:800; color:#0a0e17;'>
+                            {market_health['health_score']}
+                        </span>
+                    </div>
+                    <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-top:6px;'>HEALTH</div>
                 </div>
+                
+                <!-- Status -->
+                <div style='min-width:120px;'>
+                    <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-bottom:4px;'>MARKET</div>
+                    <div style='color:{health_color}; font-size:1.1rem; font-weight:700;'>
+                        {market_health['icon']} {market_health['status']}
+                    </div>
+                    <div style='color:#4a5568; font-size:0.75rem; margin-top:4px;'>
+                        {market_health['action']}
+                    </div>
+                </div>
+                
+                <!-- NIFTY -->
+                <div style='min-width:130px; text-align:center; padding:0 15px; 
+                            border-left:1px solid #1e2a3a; border-right:1px solid #1e2a3a;'>
+                    <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-bottom:4px;'>NIFTY 50</div>
+                    <div style='color:#e2e8f0; font-size:1.2rem; font-weight:700; 
+                                font-family:"JetBrains Mono",monospace;'>
+                        {market_health['nifty_price']:,.0f}
+                    </div>
+                    <div style='color:{nifty_change_color}; font-size:0.8rem; font-weight:600;'>
+                        {nifty_arrow} {market_health['nifty_change']:+.2f}%
+                    </div>
+                </div>
+                
+                <!-- RSI -->
+                <div style='text-align:center; min-width:60px;'>
+                    <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-bottom:4px;'>RSI</div>
+                    <div style='color:#e2e8f0; font-size:1.2rem; font-weight:700;'>
+                        {market_health['nifty_rsi']:.0f}
+                    </div>
+                </div>
+                
+                <!-- VIX -->
+                <div style='text-align:center; min-width:60px;'>
+                    <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-bottom:4px;'>VIX</div>
+                    <div style='color:{"#ff4757" if market_health["vix"] > 20 else "#ffa502" if market_health["vix"] > 15 else "#00d4aa"}; 
+                                font-size:1.2rem; font-weight:700;'>
+                        {market_health['vix']:.1f}
+                    </div>
+                </div>
+                
+                <!-- Trend -->
+                <div style='text-align:center; min-width:80px;'>
+                    <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-bottom:4px;'>TREND</div>
+                    <div style='color:{"#00d4aa" if market_health["above_sma20"] else "#ff4757"}; 
+                                font-size:0.85rem; font-weight:600;'>
+                        {"▲ ABOVE" if market_health["above_sma20"] else "▼ BELOW"} SMA20
+                    </div>
+                    <div style='color:{"#00d4aa" if market_health["above_sma50"] else "#ff4757"}; 
+                                font-size:0.75rem;'>
+                        {"▲ ABOVE" if market_health["above_sma50"] else "▼ BELOW"} SMA50
+                    </div>
+                </div>
+                
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Show detailed metrics in expander
-        with st.expander("📊 Market Details", expanded=False):
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-            
-            with m_col1:
-                st.metric("NIFTY 50", f"₹{market_health['nifty_price']:,.0f}", 
-                         f"{market_health['nifty_change']:+.2f}%")
-            
-            with m_col2:
-                st.metric("RSI", f"{market_health['nifty_rsi']:.1f}")
-            
-            with m_col3:
-                st.metric("India VIX", f"{market_health['vix']:.1f}")
-            
-            with m_col4:
-                st.metric("Trend", "Bullish" if market_health['above_sma20'] else "Bearish")
-            
-            # Technical levels
-            st.caption(f"NIFTY SMA20: ₹{market_health['nifty_sma20']:,.0f} | SMA50: ₹{market_health['nifty_sma50']:,.0f}")
-        
-        # ✅ AUTO-ADJUST SL THRESHOLDS BASED ON MARKET
+        # Auto-adjust SL thresholds
         if market_health['sl_adjustment'] == 'AGGRESSIVE':
             settings['sl_risk_threshold'] = max(30, settings['sl_risk_threshold'] - 20)
-            st.warning(f"⚠️ SL Risk threshold auto-adjusted to {settings['sl_risk_threshold']}% due to weak market")
+            st.markdown(f"""
+            <div class='alert-critical'>
+                ⚠️ SL Risk threshold auto-adjusted to <strong>{settings['sl_risk_threshold']}%</strong> — Weak market detected
+            </div>
+            """, unsafe_allow_html=True)
         elif market_health['sl_adjustment'] == 'TIGHTEN':
             settings['sl_risk_threshold'] = max(35, settings['sl_risk_threshold'] - 10)
-            st.info(f"ℹ️ SL Risk threshold adjusted to {settings['sl_risk_threshold']}% (cautious mode)")
+            st.markdown(f"""
+            <div class='alert-warning'>
+                ℹ️ SL Risk threshold adjusted to <strong>{settings['sl_risk_threshold']}%</strong> — Cautious mode
+            </div>
+            """, unsafe_allow_html=True)
     
     else:
-        market_health = None  # Set to None if fetch failed
-        st.warning("⚠️ Unable to fetch market health data")
+        market_health = None
+        st.markdown("""
+        <div class='alert-warning'>⚠️ Unable to fetch market health data</div>
+        """, unsafe_allow_html=True)
     
     st.divider()
     
@@ -4607,24 +5339,50 @@ def main():
     # =========================================================================
     # DISPLAY SUMMARY CARDS
     # =========================================================================
-    st.markdown("### 📊 Portfolio Summary")
-    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+        # Portfolio summary values
+    total_current_value = sum(r['current_price'] * r['quantity'] for r in results)
+    pnl_color_class = 'pnl-positive' if total_pnl >= 0 else 'pnl-negative'
+    pnl_sign = '+' if total_pnl >= 0 else ''
     
-    with col1:
-        pnl_delta = f"{pnl_percent_total:+.2f}%"
-        st.metric("💰 Total P&L", f"₹{total_pnl:+,.0f}", pnl_delta)
-    with col2:
-        st.metric("📊 Positions", len(results))
-    with col3:
-        st.metric("🔴 Critical", critical_count)
-    with col4:
-        st.metric("🟡 Warning", warning_count)
-    with col5:
-        st.metric("🟢 Good", good_count)
-    with col6:
-        st.metric("🔵 Opportunity", opportunity_count)
-    with col7:
-        st.metric("✅ Success", success_count)
+    st.markdown(f"""
+    <div class='summary-grid'>
+        <div class='summary-card' style='border-top:3px solid {"#00d4aa" if total_pnl >= 0 else "#ff4757"};'>
+            <div class='summary-card-label'>Total P&L</div>
+            <div class='summary-card-value {pnl_color_class}'>₹{total_pnl:+,.0f}</div>
+            <div class='summary-card-delta {pnl_color_class}'>{pnl_percent_total:+.2f}%</div>
+        </div>
+        <div class='summary-card'>
+            <div class='summary-card-label'>Portfolio Value</div>
+            <div class='summary-card-value'>₹{total_current_value:,.0f}</div>
+            <div class='summary-card-delta' style='color:#4a5568;'>{len(results)} positions</div>
+        </div>
+        <div class='summary-card' style='border-top:3px solid #ff4757;'>
+            <div class='summary-card-label'>Critical</div>
+            <div class='summary-card-value' style='color:#ff4757;'>{critical_count}</div>
+            <div class='summary-card-delta' style='color:#ff4757;'>{"⚠ ACTION NEEDED" if critical_count > 0 else "✓ Clear"}</div>
+        </div>
+        <div class='summary-card' style='border-top:3px solid #ffa502;'>
+            <div class='summary-card-label'>Warning</div>
+            <div class='summary-card-value' style='color:#ffa502;'>{warning_count}</div>
+            <div class='summary-card-delta' style='color:#ffa502;'>{"Monitor" if warning_count > 0 else "✓ Clear"}</div>
+        </div>
+        <div class='summary-card' style='border-top:3px solid #00d4aa;'>
+            <div class='summary-card-label'>Good</div>
+            <div class='summary-card-value' style='color:#00d4aa;'>{good_count}</div>
+            <div class='summary-card-delta' style='color:#00d4aa;'>On track</div>
+        </div>
+        <div class='summary-card' style='border-top:3px solid #00b4d8;'>
+            <div class='summary-card-label'>Opportunity</div>
+            <div class='summary-card-value' style='color:#00b4d8;'>{opportunity_count}</div>
+            <div class='summary-card-delta' style='color:#00b4d8;'>Extended</div>
+        </div>
+        <div class='summary-card' style='border-top:3px solid #7b68ee;'>
+            <div class='summary-card-label'>Target Hit</div>
+            <div class='summary-card-value' style='color:#7b68ee;'>{success_count}</div>
+            <div class='summary-card-delta' style='color:#7b68ee;'>Book profits</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.divider()
     
@@ -4650,320 +5408,393 @@ def main():
         sorted_results = sorted(results, key=lambda x: status_order.get(x['overall_status'], 5))
         
         for r in sorted_results:
-            status_icons = {
-                'CRITICAL': '🔴', 'WARNING': '🟡', 'OPPORTUNITY': '🔵',
-                'SUCCESS': '🟢', 'GOOD': '🟢', 'OK': '⚪'
+            # Status styling
+            status_config = {
+                'CRITICAL': {'class': 'status-critical', 'border': '#ff4757', 'icon': '🔴'},
+                'WARNING': {'class': 'status-warning', 'border': '#ffa502', 'icon': '🟡'},
+                'OPPORTUNITY': {'class': 'status-info', 'border': '#00b4d8', 'icon': '🔵'},
+                'SUCCESS': {'class': 'status-success', 'border': '#00d4aa', 'icon': '✅'},
+                'GOOD': {'class': 'status-success', 'border': '#00d4aa', 'icon': '🟢'},
+                'OK': {'class': 'status-neutral', 'border': '#2d3a4a', 'icon': '⚪'}
             }
-            status_icon = status_icons.get(r['overall_status'], '⚪')
-            pnl_emoji = "📈" if r['pnl_percent'] >= 0 else "📉"
+            cfg = status_config.get(r['overall_status'], status_config['OK'])
+            
+            pnl_class = 'pnl-positive' if r['pnl_percent'] >= 0 else 'pnl-negative'
+            pnl_arrow = '▲' if r['pnl_percent'] >= 0 else '▼'
+            badge_class = 'badge-long' if r['position_type'] == 'LONG' else 'badge-short'
+            
+            # Build expander label
+            expander_label = (
+                f"{cfg['icon']} **{r['ticker']}** │ "
+                f"{'LONG' if r['position_type'] == 'LONG' else 'SHORT'} │ "
+                f"{pnl_arrow} {r['pnl_percent']:+.2f}% (₹{r['pnl_amount']:+,.0f}) │ "
+                f"Risk: {r['sl_risk']}% │ "
+                f"{r['overall_action'].replace('_', ' ')}"
+            )
             
             with st.expander(
-                f"{status_icon} **{r['ticker']}** | "
-                f"{'📈 LONG' if r['position_type'] == 'LONG' else '📉 SHORT'} | "
-                f"{pnl_emoji} P&L: **{r['pnl_percent']:+.2f}%** (₹{r['pnl_amount']:+,.0f}) | "
-                f"SL Risk: **{r['sl_risk']}%** | "
-                f"Action: **{r['overall_action'].replace('_', ' ')}**",
+                expander_label,
                 expanded=(r['overall_status'] in ['CRITICAL', 'WARNING', 'OPPORTUNITY', 'SUCCESS'])
             ):
-                # ✅ GAP 2: CHECK FOR EMERGENCY EXIT
+                # ── EMERGENCY EXIT CHECK ──
                 is_emergency, emergency_reasons, urgency_level = detect_emergency_exit(r, market_health)
                 
                 if is_emergency:
                     if urgency_level == "CRITICAL":
                         st.markdown("""
-                        <div style='background:#dc3545; color:white; padding:15px; border-radius:10px; 
-                                    text-align:center; font-size:1.2em; font-weight:bold; margin-bottom:15px;
-                                    animation: blink 1s infinite;'>
-                            🚨 EMERGENCY EXIT REQUIRED 🚨
+                        <div class='emergency-banner'>
+                            🚨 EMERGENCY EXIT REQUIRED — ACT NOW 🚨
                         </div>
-                        <style>
-                        @keyframes blink {
-                            0%, 50%, 100% { opacity: 1; }
-                            25%, 75% { opacity: 0.5; }
-                        }
-                        </style>
                         """, unsafe_allow_html=True)
                     else:
-                        st.error("⚠️ HIGH URGENCY - Consider immediate exit")
+                        st.markdown("""
+                        <div class='alert-critical'>
+                            <strong>⚠️ HIGH URGENCY</strong> — Consider immediate exit
+                        </div>
+                        """, unsafe_allow_html=True)
                     
-                    st.markdown("**Emergency Conditions:**")
                     for reason in emergency_reasons:
-                        st.error(f"• {reason}")
-                    
-                    st.divider()
-                # ✅ GAP 3: STOCK WIN RATE WARNING
+                        st.markdown(f"""
+                        <div class='alert-critical' style='padding:8px 14px; margin:4px 0;'>
+                            {reason}
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # ── STOCK HISTORY WARNING ──
                 stock_history = get_stock_performance_history(r['ticker'])
                 
-                if stock_history['has_history']:
-                    if stock_history['win_rate'] < 45 or stock_history['expectancy'] < 0:
-                        st.markdown(f"""
-                        <div style='background:{stock_history['color']}20; padding:12px; border-radius:8px; 
-                                    border-left:4px solid {stock_history['color']}; margin-bottom:15px;'>
-                            <strong>{stock_history['icon']} Historical Performance: {stock_history['quality']}</strong><br>
-                            Win Rate: {stock_history['win_rate']:.1f}% ({stock_history['wins']}/{stock_history['trade_count']}) | 
-                            Expectancy: ₹{stock_history['expectancy']:+,.0f}<br>
-                            <strong>{stock_history['recommendation']}</strong>
+                if stock_history['has_history'] and (stock_history['win_rate'] < 45 or stock_history.get('expectancy', 0) < 0):
+                    st.markdown(f"""
+                    <div class='alert-warning' style='padding:10px 14px;'>
+                        <strong>{stock_history['icon']} Historical: {stock_history['quality']}</strong> — 
+                        Win Rate: {stock_history['win_rate']:.0f}% | 
+                        Expectancy: ₹{stock_history.get('expectancy', 0):+,.0f} | 
+                        {stock_history['recommendation']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # ── POSITION HEADER CARD ──
+                pnl_color_hex = '#00d4aa' if r['pnl_percent'] >= 0 else '#ff4757'
+                day_color = '#00d4aa' if r['day_change'] >= 0 else '#ff4757'
+                
+                st.markdown(f"""
+                <div class='position-card'>
+                    <div class='position-header'>
+                        <div>
+                            <span class='position-ticker'>{r['ticker']}</span>
+                            <span class='position-badge {badge_class}' style='margin-left:10px;'>
+                                {"▲ LONG" if r['position_type'] == 'LONG' else "▼ SHORT"}
+                            </span>
+                            <span class='{cfg["class"]}' style='margin-left:8px;'>
+                                {r['overall_action'].replace('_', ' ')}
+                            </span>
                         </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        with st.expander(f"{stock_history['icon']} Historical: {stock_history['quality']} ({stock_history['win_rate']:.0f}% win rate)", expanded=False):
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Win Rate", f"{stock_history['win_rate']:.1f}%")
-                            with col2:
-                                st.metric("Trades", f"{stock_history['wins']}/{stock_history['trade_count']}")
-                            with col3:
-                                st.metric("Expectancy", f"₹{stock_history['expectancy']:+,.0f}")
+                        <div style='text-align:right;'>
+                            <div style='font-size:1.2rem; font-weight:700; color:{pnl_color_hex};
+                                        font-family:"JetBrains Mono",monospace;'>
+                                {pnl_arrow} ₹{r['pnl_amount']:+,.0f}
+                            </div>
+                            <div style='font-size:0.8rem; color:{pnl_color_hex};'>{r['pnl_percent']:+.2f}%</div>
+                        </div>
+                    </div>
+                    <div class='position-body'>
+                        <div class='position-metrics'>
+                            <div class='position-metric'>
+                                <div class='position-metric-label'>ENTRY</div>
+                                <div class='position-metric-value'>₹{r['entry_price']:,.2f}</div>
+                            </div>
+                            <div class='position-metric'>
+                                <div class='position-metric-label'>CURRENT</div>
+                                <div class='position-metric-value' style='color:{pnl_color_hex};'>₹{r['current_price']:,.2f}</div>
+                            </div>
+                            <div class='position-metric'>
+                                <div class='position-metric-label'>DAY CHG</div>
+                                <div class='position-metric-value' style='color:{day_color};'>{r['day_change']:+.2f}%</div>
+                            </div>
+                            <div class='position-metric'>
+                                <div class='position-metric-label'>QTY</div>
+                                <div class='position-metric-value'>{r['quantity']}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                st.divider()
-                # Row 1: Basic Info
+                # ── LEVELS ROW ──
+                st.markdown(f"""
+                <div style='background:#0f1419; border:1px solid #1e2a3a; border-radius:10px; 
+                            padding:14px 18px; margin:8px 0;'>
+                    <div style='color:#4a5568; font-size:0.65rem; text-transform:uppercase; 
+                                letter-spacing:0.1em; margin-bottom:10px;'>KEY LEVELS</div>
+                    <div class='level-row'>
+                        <span class='level-label'>Stop Loss</span>
+                        <span>
+                            <span class='level-value' style='color:#ff4757;'>₹{r['stop_loss']:,.2f}</span>
+                            {'<span class="level-tag" style="background:rgba(255,71,87,0.2); color:#ff4757; margin-left:6px;">HIT!</span>' if r['sl_hit'] else ''}
+                            {'<span class="level-tag" style="background:rgba(255,165,2,0.2); color:#ffa502; margin-left:6px;">NEAR</span>' if r['approaching_sl'] and not r['sl_hit'] else ''}
+                        </span>
+                    </div>
+                    <div class='level-row'>
+                        <span class='level-label'>Target 1</span>
+                        <span>
+                            <span class='level-value' style='color:#00d4aa;'>₹{r['target1']:,.2f}</span>
+                            {'<span class="level-tag" style="background:rgba(0,212,170,0.2); color:#00d4aa; margin-left:6px;">✓ HIT</span>' if r['target1_hit'] else ''}
+                        </span>
+                    </div>
+                    <div class='level-row'>
+                        <span class='level-label'>Target 2</span>
+                        <span>
+                            <span class='level-value' style='color:#00b894;'>₹{r['target2']:,.2f}</span>
+                            {'<span class="level-tag" style="background:rgba(0,184,148,0.2); color:#00b894; margin-left:6px;">✓ HIT</span>' if r['target2_hit'] else ''}
+                        </span>
+                    </div>
+                    {'<div class="level-row"><span class="level-label">Trail SL</span><span><span class="level-value" style="color:#7b68ee;">₹' + f"{r['trail_stop']:,.2f}" + '</span><span class="level-tag" style="background:rgba(123,104,238,0.2); color:#9c88ff; margin-left:6px;">MOVE ↑</span></span></div>' if r['should_trail'] else ''}
+                    <div class='level-row'>
+                        <span class='level-label'>Support</span>
+                        <span class='level-value'>₹{r['support']:,.2f} <span style='color:#4a5568; font-size:0.65rem;'>({r['support_strength']})</span></span>
+                    </div>
+                    <div class='level-row' style='border-bottom:none;'>
+                        <span class='level-label'>Resistance</span>
+                        <span class='level-value'>₹{r['resistance']:,.2f} <span style='color:#4a5568; font-size:0.65rem;'>({r['resistance_strength']})</span></span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # ── SMART SCORES ──
+                sl_color = '#ff4757' if r['sl_risk'] >= 70 else '#ffa502' if r['sl_risk'] >= 50 else '#00d4aa'
+                mom_color = '#00d4aa' if r['momentum_score'] >= 60 else '#ffa502' if r['momentum_score'] >= 40 else '#ff4757'
+                
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.markdown("##### 💰 Position")
-                    st.write(f"**Entry:** ₹{r['entry_price']:,.2f}")
-                    st.write(f"**Current:** ₹{r['current_price']:,.2f}")
-                    st.write(f"**Qty:** {r['quantity']}")
-                    pnl_color = "green" if r['pnl_percent'] >= 0 else "red"
-                    st.markdown(f"**P&L:** <span style='color:{pnl_color};font-weight:bold;'>"
-                               f"₹{r['pnl_amount']:+,.2f} ({r['pnl_percent']:+.2f}%)</span>",
-                               unsafe_allow_html=True)
-                    if r['holding_days'] > 0:
-                        st.caption(f"Holding: {r['holding_days']} days | {r['tax_color']} {r['tax_implication']}")
-                
-                with col2:
-                    st.markdown("##### 🎯 Levels")
-                    sl_status = '🔴 HIT!' if r['sl_hit'] else ''
-                    t1_status = '✅' if r['target1_hit'] else ''
-                    t2_status = '✅' if r['target2_hit'] else ''
-                    
-                    st.write(f"**Stop Loss:** ₹{r['stop_loss']:,.2f} {sl_status}")
-                    st.write(f"**Target 1:** ₹{r['target1']:,.2f} {t1_status}")
-                    st.write(f"**Target 2:** ₹{r['target2']:,.2f} {t2_status}")
-                    
-                    if r['should_trail']:
-                        st.success(f"**Trail SL:** ₹{r['trail_stop']:,.2f}")
-                        st.caption(r.get('trail_reason', ''))
-                    
-                    if r['at_breakeven']:
-                        st.info("🔔 At Breakeven")
-                
-                with col3:
-                    st.markdown("##### 📊 Indicators")
-                    rsi_color = "green" if 40 <= r['rsi'] <= 60 else "orange" if 30 <= r['rsi'] <= 70 else "red"
-                    st.markdown(f"**RSI:** <span style='color:{rsi_color};'>{r['rsi']:.1f}</span>", 
-                               unsafe_allow_html=True)
-                    macd_color = "green" if r['macd_signal'] == "BULLISH" else "red"
-                    st.markdown(f"**MACD:** <span style='color:{macd_color};'>{r['macd_signal']}</span>", 
-                               unsafe_allow_html=True)
-                    st.write(f"**Volume:** {r['volume_signal'].replace('_', ' ')}")
-                    st.write(f"**Trend:** {r['momentum_trend']}")
-                    st.write(f"**R:R Ratio:** 1:{r['risk_reward_ratio']:.2f}")
-                
-                with col4:
-                    st.markdown("##### 🛡️ Support/Resistance")
-                    st.write(f"**Support:** ₹{r['support']:,.2f} ({r['support_strength']})")
-                    st.write(f"**Resistance:** ₹{r['resistance']:,.2f} ({r['resistance_strength']})")
-                    st.write(f"**ATR:** ₹{r['atr']:,.2f}")
-                    st.write(f"**Dist to S:** {r['distance_to_support']:.1f}%")
-                    st.write(f"**Dist to R:** {r['distance_to_resistance']:.1f}%")
-                
-                st.divider()
-
-                                # Check entry trigger status
-                
-                # Row 2: Smart Scores
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.markdown("##### ⚠️ SL Risk Score")
-                    risk_color = "#dc3545" if r['sl_risk'] >= 70 else "#ffc107" if r['sl_risk'] >= 50 else "#28a745"
-                    st.markdown(f"<h2 style='color:{risk_color};text-align:center;'>{r['sl_risk']}%</h2>",
-                               unsafe_allow_html=True)
-                    st.progress(r['sl_risk'] / 100)
+                    st.markdown(f"""
+                    <div class='score-gauge'>
+                        <div class='score-value' style='color:{sl_color};'>{r['sl_risk']}%</div>
+                        <div class='score-label'>SL RISK</div>
+                        <div class='score-bar'>
+                            <div class='score-bar-fill' style='width:{r["sl_risk"]}%; background:{sl_color};'></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                     if r['sl_reasons']:
-                        for reason in r['sl_reasons'][:3]:
+                        for reason in r['sl_reasons'][:2]:
                             st.caption(reason)
                 
                 with col2:
-                    st.markdown("##### 📈 Momentum Score")
-                    mom_color = "#28a745" if r['momentum_score'] >= 60 else "#ffc107" if r['momentum_score'] >= 40 else "#dc3545"
-                    st.markdown(f"<h2 style='color:{mom_color};text-align:center;'>{r['momentum_score']:.0f}/100</h2>",
-                               unsafe_allow_html=True)
-                    st.progress(r['momentum_score'] / 100)
+                    st.markdown(f"""
+                    <div class='score-gauge'>
+                        <div class='score-value' style='color:{mom_color};'>{r['momentum_score']:.0f}</div>
+                        <div class='score-label'>MOMENTUM</div>
+                        <div class='score-bar'>
+                            <div class='score-bar-fill' style='width:{r["momentum_score"]}%; background:{mom_color};'></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
                     st.caption(r['momentum_trend'])
                 
                 with col3:
-                    st.markdown("##### 🚀 Upside Score")
                     if r['target1_hit']:
-                        up_color = "#28a745" if r['upside_score'] >= 60 else "#ffc107" if r['upside_score'] >= 40 else "#dc3545"
-                        st.markdown(f"<h2 style='color:{up_color};text-align:center;'>{r['upside_score']}%</h2>",
-                                   unsafe_allow_html=True)
-                        st.progress(r['upside_score'] / 100)
+                        up_color = '#00d4aa' if r['upside_score'] >= 60 else '#ffa502' if r['upside_score'] >= 40 else '#ff4757'
+                        st.markdown(f"""
+                        <div class='score-gauge'>
+                            <div class='score-value' style='color:{up_color};'>{r['upside_score']}%</div>
+                            <div class='score-label'>UPSIDE</div>
+                            <div class='score-bar'>
+                                <div class='score-bar-fill' style='width:{r["upside_score"]}%; background:{up_color};'></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         if r['upside_score'] >= 60:
-                            st.success(f"New Target: ₹{r['new_target']:,.2f}")
+                            st.caption(f"New Target: ₹{r['new_target']:,.2f}")
                     else:
-                        st.markdown("<h2 style='color:#6c757d;text-align:center;'>N/A</h2>",
-                                   unsafe_allow_html=True)
-                        st.caption("Target not yet hit")
+                        st.markdown("""
+                        <div class='score-gauge'>
+                            <div class='score-value' style='color:#2d3a4a;'>—</div>
+                            <div class='score-label'>UPSIDE</div>
+                            <div class='score-bar'><div class='score-bar-fill' style='width:0%;'></div></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        st.caption("Target not hit yet")
                 
                 with col4:
-                    st.markdown("##### 📊 MTF Alignment")
                     if r['mtf_signals']:
-                        mtf_color = "#28a745" if r['mtf_alignment'] >= 60 else "#ffc107" if r['mtf_alignment'] >= 40 else "#dc3545"
-                        st.markdown(f"<h2 style='color:{mtf_color};text-align:center;'>{r['mtf_alignment']}%</h2>",
-                                   unsafe_allow_html=True)
-                        st.progress(r['mtf_alignment'] / 100)
+                        mtf_color = '#00d4aa' if r['mtf_alignment'] >= 60 else '#ffa502' if r['mtf_alignment'] >= 40 else '#ff4757'
+                        st.markdown(f"""
+                        <div class='score-gauge'>
+                            <div class='score-value' style='color:{mtf_color};'>{r['mtf_alignment']}%</div>
+                            <div class='score-label'>MTF ALIGN</div>
+                            <div class='score-bar'>
+                                <div class='score-bar-fill' style='width:{r["mtf_alignment"]}%; background:{mtf_color};'></div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                         for tf, signal in r['mtf_signals'].items():
-                            sig_emoji = "🟢" if signal == "BULLISH" else "🔴" if signal == "BEARISH" else "⚪"
-                            st.caption(f"{tf}: {sig_emoji} {signal}")
+                            sig_icon = "🟢" if signal == "BULLISH" else "🔴" if signal == "BEARISH" else "⚪"
+                            st.caption(f"{tf}: {sig_icon} {signal}")
                     else:
-                        st.markdown("<h2 style='color:#6c757d;text-align:center;'>N/A</h2>",
-                                   unsafe_allow_html=True)
-                        st.caption("MTF data unavailable")
-                                    # ✅ GAP 4: CHART PATTERN DETECTION
+                        st.markdown("""
+                        <div class='score-gauge'>
+                            <div class='score-value' style='color:#2d3a4a;'>—</div>
+                            <div class='score-label'>MTF ALIGN</div>
+                            <div class='score-bar'><div class='score-bar-fill' style='width:0%;'></div></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # ── TECHNICAL INDICATORS ROW ──
+                rsi_color = '#00d4aa' if 40 <= r['rsi'] <= 60 else '#ffa502' if 30 <= r['rsi'] <= 70 else '#ff4757'
+                macd_color = '#00d4aa' if r['macd_signal'] == 'BULLISH' else '#ff4757'
+                
+                st.markdown(f"""
+                <div style='background:#0f1419; border:1px solid #1e2a3a; border-radius:10px; 
+                            padding:12px 18px; margin:8px 0;'>
+                    <div style='display:flex; justify-content:space-around; flex-wrap:wrap; gap:8px;'>
+                        <div style='text-align:center; min-width:70px;'>
+                            <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>RSI</div>
+                            <div style='color:{rsi_color}; font-size:1rem; font-weight:700;'>{r['rsi']:.1f}</div>
+                        </div>
+                        <div style='width:1px; background:#1e2a3a;'></div>
+                        <div style='text-align:center; min-width:70px;'>
+                            <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>MACD</div>
+                            <div style='color:{macd_color}; font-size:0.85rem; font-weight:700;'>{r['macd_signal']}</div>
+                        </div>
+                        <div style='width:1px; background:#1e2a3a;'></div>
+                        <div style='text-align:center; min-width:80px;'>
+                            <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>VOLUME</div>
+                            <div style='color:#e2e8f0; font-size:0.8rem; font-weight:600;'>{r['volume_signal'].replace("_"," ")}</div>
+                            <div style='color:#4a5568; font-size:0.65rem;'>{r['volume_ratio']:.1f}x avg</div>
+                        </div>
+                        <div style='width:1px; background:#1e2a3a;'></div>
+                        <div style='text-align:center; min-width:70px;'>
+                            <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>ATR</div>
+                            <div style='color:#e2e8f0; font-size:0.85rem; font-weight:600;'>₹{r['atr']:,.2f}</div>
+                        </div>
+                        <div style='width:1px; background:#1e2a3a;'></div>
+                        <div style='text-align:center; min-width:70px;'>
+                            <div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>R:R</div>
+                            <div style='color:#e2e8f0; font-size:0.85rem; font-weight:600;'>1:{r['risk_reward_ratio']:.2f}</div>
+                        </div>
+                        {"<div style='width:1px; background:#1e2a3a;'></div><div style='text-align:center; min-width:80px;'><div style='color:#4a5568; font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em;'>HOLDING</div><div style='color:#e2e8f0; font-size:0.85rem;'>" + str(r['holding_days']) + "d</div><div style='color:#4a5568; font-size:0.6rem;'>" + r['tax_implication'][:15] + "</div></div>" if r['holding_days'] > 0 else ""}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # ── CHART PATTERNS ──
                 if 'df' in r:
                     detected_patterns = detect_chart_patterns(r['df'], r['current_price'])
-                    
                     if detected_patterns:
-                        st.divider()
-                        st.markdown("##### 📐 Detected Patterns")
-                        
+                        st.markdown("<div style='color:#4a5568; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; margin:12px 0 6px 0;'>DETECTED PATTERNS</div>", unsafe_allow_html=True)
                         for pattern in detected_patterns:
-                            signal_color = "#28a745" if pattern['signal'] == 'BULLISH' else "#dc3545"
-                            
+                            p_class = 'pattern-bullish' if pattern['signal'] == 'BULLISH' else 'pattern-bearish'
+                            p_color = '#00d4aa' if pattern['signal'] == 'BULLISH' else '#ff4757'
                             st.markdown(f"""
-                            <div style='background:{signal_color}20; padding:10px; border-radius:8px; 
-                                        border-left:3px solid {signal_color}; margin:5px 0;'>
-                                <strong>{pattern['icon']} {pattern['name']}</strong> ({pattern['signal']} - {pattern['strength']})<br>
-                                <small>{pattern['description']}</small><br>
-                                <em>→ {pattern['action']}</em>
+                            <div class='pattern-card {p_class}'>
+                                <strong style='color:{p_color};'>{pattern['icon']} {pattern['name']}</strong>
+                                <span style='color:#4a5568; font-size:0.75rem;'> — {pattern['signal']} ({pattern['strength']})</span><br>
+                                <span style='color:#a0aec0; font-size:0.8rem;'>{pattern['description']}</span><br>
+                                <span style='color:#e2e8f0; font-size:0.8rem;'>→ {pattern['action']}</span>
                             </div>
                             """, unsafe_allow_html=True)
                 
-                # Row 3: Partial Exits
+                # ── PARTIAL EXITS ──
                 if r['partial_exits']['triggered_count'] > 0:
-                    st.divider()
-                    st.markdown("##### 📊 Partial Exit Levels")
-                    
+                    st.markdown("<div style='color:#4a5568; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; margin:12px 0 6px 0;'>PARTIAL EXIT LEVELS</div>", unsafe_allow_html=True)
                     pe_cols = st.columns(4)
                     for idx, pe in enumerate(r['partial_exits']['recommendations'][:4]):
                         with pe_cols[idx]:
-                            status_color = "#28a745" if pe['status'] == 'TRIGGERED' else "#6c757d"
+                            pe_color = '#00d4aa' if pe['status'] == 'TRIGGERED' else '#2d3a4a'
                             st.markdown(f"""
-                            <div style='padding:10px;background:{status_color}20;border-radius:8px;text-align:center;border-left:3px solid {status_color};'>
-                                <strong>₹{pe['level']:,.2f}</strong><br>
-                                <small>{pe['reason']}</small><br>
-                                <span style='color:{status_color};'>{pe['status']}</span>
+                            <div style='background:#0f1419; border:1px solid {pe_color}; border-radius:8px; 
+                                        padding:10px; text-align:center;'>
+                                <div style='color:#e2e8f0; font-weight:700; font-family:monospace;'>₹{pe['level']:,.2f}</div>
+                                <div style='color:#4a5568; font-size:0.7rem;'>{pe['reason']}</div>
+                                <div style='color:{pe_color}; font-size:0.7rem; font-weight:600; margin-top:4px;'>{pe['status']}</div>
                             </div>
                             """, unsafe_allow_html=True)
                 
-                # Row 4: Alerts
+                # ── ALERTS ──
                 if r['alerts']:
-                    st.divider()
-                    st.markdown("##### ⚠️ Alerts & Recommendations")
+                    st.markdown("<div style='color:#4a5568; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; margin:12px 0 6px 0;'>ALERTS & ACTIONS</div>", unsafe_allow_html=True)
                     for alert in r['alerts']:
-                        if alert['priority'] == 'CRITICAL':
-                            st.error(f"**{alert['type']}**: {alert['message']}\n\n**⚡ Action: {alert['action']}**")
-                        elif alert['priority'] == 'HIGH':
-                            st.warning(f"**{alert['type']}**: {alert['message']}\n\n**⚡ Action: {alert['action']}**")
-                        elif alert['priority'] == 'MEDIUM':
-                            st.info(f"**{alert['type']}**: {alert['message']}\n\n**Action: {alert['action']}**")
-                        else:
-                            st.caption(f"ℹ️ {alert['type']}: {alert['message']}")
+                        alert_class_map = {
+                            'CRITICAL': 'alert-critical',
+                            'HIGH': 'alert-warning',
+                            'MEDIUM': 'alert-info',
+                            'LOW': 'alert-success'
+                        }
+                        alert_css = alert_class_map.get(alert['priority'], 'alert-info')
+                        st.markdown(f"""
+                        <div class='{alert_css}'>
+                            <strong>{alert['type']}</strong>: {alert['message']}<br>
+                            <span style='font-size:0.85rem;'>⚡ {alert['action']}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
                 
-                # Recommendation Box
-                rec_colors = {
-                    'EXIT': 'critical-box', 'EXIT_EARLY': 'critical-box',
-                    'WATCH': 'warning-box', 'BOOK_PROFITS': 'success-box',
-                    'HOLD_EXTEND': 'info-box', 'TRAIL_SL': 'success-box',
-                    'HOLD': 'info-box', 'MOVE_SL_BREAKEVEN': 'info-box'
+                # ── RECOMMENDATION BOX ──
+                rec_class_map = {
+                    'EXIT': 'rec-exit', 'EXIT_EARLY': 'rec-exit',
+                    'WATCH': 'rec-watch', 'BOOK_PROFITS': 'rec-profit',
+                    'HOLD_EXTEND': 'rec-hold', 'TRAIL_SL': 'rec-trail',
+                    'HOLD': 'rec-hold', 'MOVE_SL_BREAKEVEN': 'rec-trail'
                 }
-                rec_class = rec_colors.get(r['overall_action'], 'info-box')
+                rec_css = rec_class_map.get(r['overall_action'], 'rec-hold')
                 
                 st.markdown(f"""
-                <div class="{rec_class}">
-                    📌 RECOMMENDATION: {r['overall_action'].replace('_', ' ')}
+                <div class='{rec_css}'>
+                    📌 {r['overall_action'].replace('_', ' ')}
                 </div>
                 """, unsafe_allow_html=True)
-                # ============================================================================
-                # ✅ NEW: AUTO-UPDATE GOOGLE SHEETS SECTION
-                # ============================================================================
                 
-                st.divider()
-                st.markdown("##### 🔄 Auto-Update Actions")
-                
-                # ============================================================================
-                # 🆕 AUTOMATIC UPDATES - NO BUTTONS NEEDED
-                # ============================================================================
+                # ── AUTO UPDATE & MANUAL EXIT ──
+                st.markdown("<div style='color:#4a5568; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em; margin:12px 0 6px 0;'>ACTIONS</div>", unsafe_allow_html=True)
                 
                 auto_update_col1, auto_update_col2 = st.columns(2)
                 
                 with auto_update_col1:
-                    st.markdown("**📊 Automatic Updates**")
-                    
                     # AUTO-UPDATE STOP LOSS
                     if r['should_trail'] and r['trail_stop'] != r['stop_loss']:
-                        # Check if we already updated today (to avoid multiple updates)
                         update_key = f"sl_updated_{r['ticker']}_{get_ist_now().strftime('%Y%m%d')}"
-                        
                         if update_key not in st.session_state:
-                            with st.spinner(f"Updating SL for {r['ticker']}..."):
+                            with st.spinner(f"Updating SL..."):
                                 success, msg = update_sheet_stop_loss(
-                                    r['ticker'],
-                                    r['trail_stop'],
+                                    r['ticker'], r['trail_stop'],
                                     r.get('trail_reason', 'Trail stop recommended'),
                                     should_send_email=True,
-                                    email_settings=settings["email_settings"],
-                                    result=r
+                                    email_settings=settings["email_settings"], result=r
                                 )
-                                
                                 if success:
-                                    st.success(f"✅ {msg}")
+                                    st.success(f"✅ SL → ₹{r['trail_stop']:.2f}")
                                     st.session_state[update_key] = True
-                                    # Update the current result to reflect new SL
                                     r['stop_loss'] = r['trail_stop']
                                 else:
                                     st.warning(f"⚠️ {msg}")
                         else:
-                            st.info(f"✅ SL already updated to ₹{r['trail_stop']:.2f} today")
+                            st.markdown(f"<div class='alert-success' style='padding:8px 12px; font-size:0.8rem;'>✓ SL updated to ₹{r['trail_stop']:.2f}</div>", unsafe_allow_html=True)
                     
                     # AUTO-UPDATE TARGET
                     if r['target1_hit'] and r['upside_score'] >= 60 and r['new_target'] != r['target2']:
                         update_key = f"target_updated_{r['ticker']}_{get_ist_now().strftime('%Y%m%d')}"
-                        
                         if update_key not in st.session_state:
-                            with st.spinner(f"Updating Target for {r['ticker']}..."):
+                            with st.spinner(f"Updating Target..."):
                                 success, msg = update_sheet_target(
-                                    r['ticker'],
-                                    r['new_target'],
-                                    2,
-                                    f"Extended target based on {r['upside_score']}% upside score",
+                                    r['ticker'], r['new_target'], 2,
+                                    f"Extended (upside {r['upside_score']}%)",
                                     should_send_email=True,
-                                    email_settings=settings["email_settings"],
-                                    result=r
+                                    email_settings=settings["email_settings"], result=r
                                 )
-                                
                                 if success:
-                                    st.success(f"✅ {msg}")
+                                    st.success(f"✅ T2 → ₹{r['new_target']:.2f}")
                                     st.session_state[update_key] = True
-                                    # Update the current result to reflect new target
                                     r['target2'] = r['new_target']
                                 else:
                                     st.warning(f"⚠️ {msg}")
                         else:
-                            st.info(f"✅ Target already updated to ₹{r['new_target']:.2f} today")
+                            st.markdown(f"<div class='alert-success' style='padding:8px 12px; font-size:0.8rem;'>✓ Target updated to ₹{r['new_target']:.2f}</div>", unsafe_allow_html=True)
                 
                 with auto_update_col2:
-                    st.markdown("**🚪 Exit Controls**")
-                    
-                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    # SUGGESTED EXIT (when conditions are met)
-                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    # SUGGESTED EXIT
                     exit_conditions = (
                         r['overall_action'] in ['EXIT', 'EXIT_EARLY', 'BOOK_PROFITS'] or 
-                        r['sl_hit'] or 
-                        r['target2_hit']
+                        r['sl_hit'] or r['target2_hit']
                     )
                     
                     if exit_conditions:
@@ -4979,34 +5810,21 @@ def main():
                         else:
                             exit_reason = "Book Profits"
                         
-                        pnl_color = "🟢" if r['pnl_amount'] >= 0 else "🔴"
-                        
-                        st.warning(f"⚡ **Suggested:** {exit_reason}")
-                        
                         if st.button(
-                            f"🚪 Confirm Exit ({pnl_color} ₹{r['pnl_amount']:+,.0f})",
+                            f"🚪 Exit ({r['pnl_amount']:+,.0f})",
                             key=f"suggested_exit_{r['ticker']}",
-                            use_container_width=True,
-                            type="primary",
-                            help=f"Exit reason: {exit_reason}. Updates Google Sheet and sends email."
+                            use_container_width=True, type="primary"
                         ):
                             with st.spinner(f"Closing {r['ticker']}..."):
                                 success, msg = mark_position_inactive(
-                                    r['ticker'],
-                                    r['current_price'],
-                                    r['pnl_amount'],
-                                    exit_reason,
+                                    r['ticker'], r['current_price'], r['pnl_amount'], exit_reason,
                                     should_send_email=True,
-                                    email_settings=settings["email_settings"],
-                                    result=r
+                                    email_settings=settings["email_settings"], result=r
                                 )
-                                
                                 if success:
                                     st.success(f"✅ {msg}")
-                                    log_trade(
-                                        r['ticker'], r['entry_price'], r['current_price'],
-                                        r['quantity'], r['position_type'], exit_reason
-                                    )
+                                    log_trade(r['ticker'], r['entry_price'], r['current_price'],
+                                             r['quantity'], r['position_type'], exit_reason)
                                     if r['pnl_amount'] > 0:
                                         st.balloons()
                                     time.sleep(2)
@@ -5014,115 +5832,48 @@ def main():
                                 else:
                                     st.error(f"❌ {msg}")
                     
-                    st.divider()
-                    
-                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    # MANUAL EXIT (always available for any stock)
-                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    st.markdown("**✋ Manual Exit (Any Reason)**")
-                    
-                    # Custom exit price input
-                    manual_exit_price = st.number_input(
-                        f"Exit Price for {r['ticker']}",
-                        min_value=0.01,
-                        value=float(round_to_tick_size(r['current_price'])),
-                        step=0.05,
-                        key=f"manual_price_{r['ticker']}",
-                        help="Enter actual exit price (default: current market price)"
-                    )
-                    
-                    # Custom exit reason
-                    manual_reason = st.selectbox(
-                        "Exit Reason",
-                        [
-                            "Manual Exit - Strategy Change",
-                            "Manual Exit - Risk Management",
-                            "Manual Exit - Capital Reallocation",
-                            "Manual Exit - News/Event Based",
-                            "Manual Exit - Partial Profit Booking",
-                            "Manual Exit - Market Conditions",
-                            "Manual Exit - Other"
-                        ],
-                        key=f"manual_reason_{r['ticker']}"
-                    )
-                    
-                    # Calculate P&L based on manual exit price
-                    if r['position_type'] == 'LONG':
-                        manual_pnl = (manual_exit_price - r['entry_price']) * r['quantity']
-                        manual_pnl_pct = ((manual_exit_price - r['entry_price']) / r['entry_price']) * 100
-                    else:
-                        manual_pnl = (r['entry_price'] - manual_exit_price) * r['quantity']
-                        manual_pnl_pct = ((r['entry_price'] - manual_exit_price) / r['entry_price']) * 100
-                    
-                    # Show P&L preview
-                    pnl_preview_color = "#28a745" if manual_pnl >= 0 else "#dc3545"
-                    st.markdown(f"""
-                    <div style='background:{pnl_preview_color}15; padding:10px; border-radius:8px; 
-                                border-left:3px solid {pnl_preview_color}; margin:5px 0;'>
-                        <strong>P&L Preview:</strong> 
-                        <span style='color:{pnl_preview_color}; font-weight:bold;'>
-                            ₹{manual_pnl:+,.2f} ({manual_pnl_pct:+.2f}%)
-                        </span><br>
-                        <small>Entry: ₹{r['entry_price']:,.2f} → Exit: ₹{manual_exit_price:,.2f} × {r['quantity']} qty</small>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Confirmation checkbox to prevent accidental clicks
-                    confirm_exit = st.checkbox(
-                        f"I confirm I want to exit {r['ticker']}",
-                        value=False,
-                        key=f"confirm_manual_{r['ticker']}"
-                    )
-                    
-                    if st.button(
-                        f"✋ Execute Manual Exit",
-                        key=f"manual_exit_{r['ticker']}",
-                        use_container_width=True,
-                        type="secondary",
-                        disabled=not confirm_exit,
-                        help="Check the confirmation box above to enable this button"
-                    ):
-                        if confirm_exit:
-                            with st.spinner(f"Processing manual exit for {r['ticker']}..."):
-                                # Create a modified result dict with the manual exit price
-                                manual_result = r.copy()
-                                manual_result['current_price'] = manual_exit_price
-                                manual_result['pnl_amount'] = manual_pnl
-                                manual_result['pnl_percent'] = manual_pnl_pct
-                                
-                                success, msg = mark_position_inactive(
-                                    r['ticker'],
-                                    manual_exit_price,
-                                    manual_pnl,
-                                    manual_reason,
-                                    should_send_email=True,
-                                    email_settings=settings["email_settings"],
-                                    result=manual_result
-                                )
-                                
-                                if success:
-                                    st.success(f"✅ {msg}")
-                                    st.success("📧 Exit notification email sent!")
-                                    
-                                    # Log the trade
-                                    log_trade(
-                                        r['ticker'],
-                                        r['entry_price'],
-                                        manual_exit_price,
-                                        r['quantity'],
-                                        r['position_type'],
-                                        manual_reason
-                                    )
-                                    
-                                    if manual_pnl > 0:
-                                        st.balloons()
-                                    
-                                    time.sleep(2)
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ Failed: {msg}")
+                    # MANUAL EXIT (always available)
+                    with st.popover("✋ Manual Exit", use_container_width=True):
+                        manual_exit_price = st.number_input(
+                            "Exit Price", min_value=0.01,
+                            value=float(round_to_tick_size(r['current_price'])),
+                            step=0.05, key=f"manual_price_{r['ticker']}"
+                        )
+                        manual_reason = st.selectbox("Reason", [
+                            "Manual - Strategy Change", "Manual - Risk Management",
+                            "Manual - Capital Reallocation", "Manual - News/Event",
+                            "Manual - Partial Booking", "Manual - Market Conditions"
+                        ], key=f"manual_reason_{r['ticker']}")
+                        
+                        if r['position_type'] == 'LONG':
+                            m_pnl = (manual_exit_price - r['entry_price']) * r['quantity']
                         else:
-                            st.warning("⚠️ Please check the confirmation box first")             
+                            m_pnl = (r['entry_price'] - manual_exit_price) * r['quantity']
+                        
+                        m_pnl_color = '#00d4aa' if m_pnl >= 0 else '#ff4757'
+                        st.markdown(f"<div style='color:{m_pnl_color}; font-weight:700; font-size:1.1rem; text-align:center; margin:10px 0;'>P&L: ₹{m_pnl:+,.2f}</div>", unsafe_allow_html=True)
+                        
+                        confirm = st.checkbox(f"Confirm exit {r['ticker']}", key=f"confirm_{r['ticker']}")
+                        
+                        if st.button("Execute Exit", key=f"exec_exit_{r['ticker']}",
+                                    use_container_width=True, type="primary", disabled=not confirm):
+                            manual_result = r.copy()
+                            manual_result['current_price'] = manual_exit_price
+                            manual_result['pnl_amount'] = m_pnl
+                            
+                            success, msg = mark_position_inactive(
+                                r['ticker'], manual_exit_price, m_pnl, manual_reason,
+                                should_send_email=True,
+                                email_settings=settings["email_settings"], result=manual_result
+                            )
+                            if success:
+                                st.success(f"✅ {msg}")
+                                log_trade(r['ticker'], r['entry_price'], manual_exit_price,
+                                         r['quantity'], r['position_type'], manual_reason)
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")           
     
     # =========================================================================
     # TAB 2: CHARTS
@@ -5177,7 +5928,14 @@ def main():
                 height=500,
                 xaxis_rangeslider_visible=False,
                 xaxis_title="Date",
-                yaxis_title="Price (₹)"
+                yaxis_title="Price (₹)",
+                template="plotly_dark",
+                plot_bgcolor='#0a0e17',
+                paper_bgcolor='#0a0e17',
+                font=dict(color='#a0aec0', family='Inter, sans-serif'),
+                xaxis=dict(gridcolor='#1e2a3a', zerolinecolor='#1e2a3a'),
+                yaxis=dict(gridcolor='#1e2a3a', zerolinecolor='#1e2a3a'),
+                legend=dict(bgcolor='rgba(15,20,25,0.8)', bordercolor='#1e2a3a')
             )
             
             st.plotly_chart(fig, use_container_width=True)
@@ -5193,7 +5951,12 @@ def main():
                 fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
                 fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
                 fig_rsi.add_hline(y=50, line_dash="dot", line_color="gray")
-                fig_rsi.update_layout(title="RSI (14)", height=250, yaxis_range=[0, 100])
+                fig_rsi.update_layout(
+                    title="RSI (14)", height=250, yaxis_range=[0, 100],
+                    template="plotly_dark", plot_bgcolor='#0a0e17', paper_bgcolor='#0a0e17',
+                    font=dict(color='#a0aec0'), xaxis=dict(gridcolor='#1e2a3a'),
+                    yaxis=dict(gridcolor='#1e2a3a')
+                )
                 st.plotly_chart(fig_rsi, use_container_width=True)
             
             with col2:
@@ -5206,7 +5969,12 @@ def main():
                                              name='MACD', line=dict(color='blue', width=1)))
                 fig_macd.add_trace(go.Scatter(x=df['Date'], y=signal, mode='lines',
                                              name='Signal', line=dict(color='orange', width=1)))
-                fig_macd.update_layout(title="MACD", height=250)
+                fig_macd.update_layout(
+                    title="MACD", height=250,
+                    template="plotly_dark", plot_bgcolor='#0a0e17', paper_bgcolor='#0a0e17',
+                    font=dict(color='#a0aec0'), xaxis=dict(gridcolor='#1e2a3a'),
+                    yaxis=dict(gridcolor='#1e2a3a')
+                )
                 st.plotly_chart(fig_macd, use_container_width=True)
             
             # Volume Chart
@@ -5215,7 +5983,12 @@ def main():
                          for i in range(len(df))]
             fig_vol.add_trace(go.Bar(x=df['Date'], y=df['Volume'], name='Volume',
                                     marker_color=vol_colors))
-            fig_vol.update_layout(title="Volume", height=200)
+            fig_vol.update_layout(
+                title="Volume", height=200,
+                template="plotly_dark", plot_bgcolor='#0a0e17', paper_bgcolor='#0a0e17',
+                font=dict(color='#a0aec0'), xaxis=dict(gridcolor='#1e2a3a'),
+                yaxis=dict(gridcolor='#1e2a3a')
+            )
             st.plotly_chart(fig_vol, use_container_width=True)
     
     # =========================================================================
@@ -5427,14 +6200,16 @@ def main():
         st.caption("🔄 Auto-refresh disabled. Click 'Refresh' button to update.")
     
     # Footer
-    st.markdown("---")
-    st.markdown(
-        f"<p style='text-align:center;color:#666;font-size:0.8em;'>"
-        f"Smart Portfolio Monitor v6.0 | Last updated: {ist_now.strftime('%H:%M:%S')} IST | "
-        f"Positions: {len(results)} | API Calls: {st.session_state.api_call_count}"
-        f"</p>",
-        unsafe_allow_html=True
-    )
+    # Footer
+    st.markdown(f"""
+    <div class='terminal-footer'>
+        SMART PORTFOLIO MONITOR v6.0 &nbsp;│&nbsp; 
+        {ist_now.strftime('%H:%M:%S')} IST &nbsp;│&nbsp; 
+        {len(results)} POSITIONS &nbsp;│&nbsp; 
+        {st.session_state.api_call_count} API CALLS &nbsp;│&nbsp;
+        {"📧 EMAIL ON" if settings['email_settings']['enabled'] else "📧 OFF"}
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ============================================================================
