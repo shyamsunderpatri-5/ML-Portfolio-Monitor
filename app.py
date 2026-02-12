@@ -18,7 +18,6 @@ import time
 import json
 from typing import Tuple, Optional, Dict, List, Any
 import logging
-from datetime import datetime, timedelta
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -41,9 +40,10 @@ except ImportError:
     st.warning("⚠️ Install gspread: pip install gspread google-auth")
 
 # ✅ FIX: Get credentials from Streamlit Secrets/Environment
+credentials = None  # ✅ Initialize to None so it always exists
+
 try:
     if 'GCP_SA_KEY' in os.environ:
-        # For Streamlit Cloud/GitHub Actions
         service_account_info = json.loads(os.environ.get('GCP_SA_KEY'))
         credentials = Credentials.from_service_account_info(
             service_account_info, 
@@ -1982,11 +1982,11 @@ def calculate_dynamic_levels(df, entry_price, current_price, stop_loss, position
         # Calculate dynamic targets
         result['target1'] = current_price + (atr * 1.5)
         result['target2'] = current_price + (atr * 3)
-        # ✅ Round targets to NSE tick size
+        result['target3'] = min(current_price + (atr * 5), sr_levels['nearest_resistance'])
+        # ✅ Round targets to NSE tick size AFTER all are defined
         result["target1"] = round_to_tick_size(result["target1"])
         result["target2"] = round_to_tick_size(result["target2"])
         result["target3"] = round_to_tick_size(result["target3"])
-        result['target3'] = min(current_price + (atr * 5), sr_levels['nearest_resistance'])
         
         # Dynamic trail based on profit level AND volatility (ATR)
         if pnl_percent >= trail_trigger * 5:  # e.g., 10% profit
@@ -2976,15 +2976,16 @@ def validate_portfolio(df):
 
 def get_google_sheet_connection():
     try:
-        # ✅ FIX: Use the 'credentials' object created at the top of the script
+        if credentials is None:
+            return None, "Google credentials not configured"
         gc = gspread.authorize(credentials)
-        sh = gc.open("my_portfolio") # Ensure this matches your Sheet name
+        sh = gc.open("my_portfolio")
         return sh.sheet1, "success"
     except Exception as e:
         return None, str(e)
 
 
-def update_sheet_stop_loss(ticker, new_sl, reason, send_email_alert=True, email_settings=None, result=None):
+def update_sheet_stop_loss(ticker, new_sl, reason, should_send_email=True, email_settings=None, result=None):
     """
     Update Stop Loss in Google Sheet and send email notification
     Returns: (success, message)
@@ -3026,7 +3027,7 @@ def update_sheet_stop_loss(ticker, new_sl, reason, send_email_alert=True, email_
         log_email(log_message)
         
         # 🆕 SEND EMAIL NOTIFICATION
-        if send_email_alert and email_settings and result:
+        if should_send_email and email_settings and result:
             if email_settings.get('email_on_sl_change', True):
                 sender = email_settings.get('sender_email')
                 password = email_settings.get('sender_password')
@@ -3089,7 +3090,7 @@ def update_sheet_stop_loss(ticker, new_sl, reason, send_email_alert=True, email_
         logger.error(error_msg)
         return False, error_msg
 
-def update_sheet_target(ticker, new_target, target_num, reason, send_email_alert=True, email_settings=None, result=None):
+def update_sheet_target(ticker, new_target, target_num, reason, should_send_email=True, email_settings=None, result=None):
     """
     Update Target in Google Sheet and send email notification
     target_num: 1 or 2
@@ -3132,7 +3133,7 @@ def update_sheet_target(ticker, new_target, target_num, reason, send_email_alert
         log_email(log_message)
         
         # 🆕 SEND EMAIL NOTIFICATION
-        if send_email_alert and email_settings and result:
+        if should_send_email and email_settings and result:
             if email_settings.get('email_on_target_change', True):
                 sender = email_settings.get('sender_email')
                 password = email_settings.get('sender_password')
@@ -3191,7 +3192,7 @@ def update_sheet_target(ticker, new_target, target_num, reason, send_email_alert
         logger.error(error_msg)
         return False, error_msg
 
-def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason, send_email_alert=True, email_settings=None, result=None):
+def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason, should_send_email=True, email_settings=None, result=None):
     """
     Mark position as INACTIVE and record realized P&L
     Sends email notification on exit
@@ -3258,7 +3259,7 @@ def mark_position_inactive(ticker, exit_price, pnl_amount, exit_reason, send_ema
         log_email(log_message)
         
         # 🆕 SEND EMAIL NOTIFICATION
-        if send_email_alert and email_settings and result:
+        if should_send_email and email_settings and result:
             sender = email_settings.get('sender_email')
             password = email_settings.get('sender_password')
             recipient = email_settings.get('recipient_email')
@@ -4912,7 +4913,7 @@ def main():
                                     r['ticker'],
                                     r['trail_stop'],
                                     r.get('trail_reason', 'Trail stop recommended'),
-                                    send_email_alert=True,
+                                    should_send_email=True,
                                     email_settings=settings["email_settings"],
                                     result=r
                                 )
@@ -4938,7 +4939,7 @@ def main():
                                     r['new_target'],
                                     2,
                                     f"Extended target based on {r['upside_score']}% upside score",
-                                    send_email_alert=True,
+                                    should_send_email=True,
                                     email_settings=settings["email_settings"],
                                     result=r
                                 )
@@ -4954,9 +4955,11 @@ def main():
                             st.info(f"✅ Target already updated to ₹{r['new_target']:.2f} today")
                 
                 with auto_update_col2:
-                    st.markdown("**🚪 Manual Exit Control**")
+                    st.markdown("**🚪 Exit Controls**")
                     
-                    # MANUAL EXIT BUTTON (ONLY THIS REMAINS AS BUTTON)
+                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    # SUGGESTED EXIT (when conditions are met)
+                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     exit_conditions = (
                         r['overall_action'] in ['EXIT', 'EXIT_EARLY', 'BOOK_PROFITS'] or 
                         r['sl_hit'] or 
@@ -4976,54 +4979,150 @@ def main():
                         else:
                             exit_reason = "Book Profits"
                         
-                        button_label = f"🚪 Mark INACTIVE (₹{r['pnl_amount']:+,.0f})"
-                        button_type = "primary" if r['sl_hit'] or r['overall_action'] == 'EXIT_EARLY' else "secondary"
+                        pnl_color = "🟢" if r['pnl_amount'] >= 0 else "🔴"
+                        
+                        st.warning(f"⚡ **Suggested:** {exit_reason}")
                         
                         if st.button(
-                            button_label,
-                            key=f"exit_{r['ticker']}",
+                            f"🚪 Confirm Exit ({pnl_color} ₹{r['pnl_amount']:+,.0f})",
+                            key=f"suggested_exit_{r['ticker']}",
                             use_container_width=True,
-                            type=button_type,
-                            help=f"Click to close position and record P&L. Email will be sent."
+                            type="primary",
+                            help=f"Exit reason: {exit_reason}. Updates Google Sheet and sends email."
                         ):
-                            with st.spinner(f"Closing position for {r['ticker']}..."):
+                            with st.spinner(f"Closing {r['ticker']}..."):
                                 success, msg = mark_position_inactive(
                                     r['ticker'],
                                     r['current_price'],
                                     r['pnl_amount'],
                                     exit_reason,
-                                    send_email_alert=True,
+                                    should_send_email=True,
                                     email_settings=settings["email_settings"],
                                     result=r
                                 )
                                 
                                 if success:
                                     st.success(f"✅ {msg}")
-                                    st.success("📧 Email notification sent!")
-                                    
-                                    # Log the trade in app history
                                     log_trade(
-                                        r['ticker'],
-                                        r['entry_price'],
-                                        r['current_price'],
-                                        r['quantity'],
-                                        r['position_type'],
-                                        exit_reason
+                                        r['ticker'], r['entry_price'], r['current_price'],
+                                        r['quantity'], r['position_type'], exit_reason
                                     )
-                                    
                                     if r['pnl_amount'] > 0:
                                         st.balloons()
-                                    
-                                    time.sleep(3)
+                                    time.sleep(2)
                                     st.rerun()
                                 else:
                                     st.error(f"❌ {msg}")
-                        
-                        # Show details
-                        st.caption(f"📊 Status → INACTIVE | P&L → ₹{r['pnl_amount']:+,.0f}")
-                        st.caption(f"📧 Email will be sent on confirmation")
+                    
+                    st.divider()
+                    
+                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    # MANUAL EXIT (always available for any stock)
+                    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    st.markdown("**✋ Manual Exit (Any Reason)**")
+                    
+                    # Custom exit price input
+                    manual_exit_price = st.number_input(
+                        f"Exit Price for {r['ticker']}",
+                        min_value=0.01,
+                        value=float(round_to_tick_size(r['current_price'])),
+                        step=0.05,
+                        key=f"manual_price_{r['ticker']}",
+                        help="Enter actual exit price (default: current market price)"
+                    )
+                    
+                    # Custom exit reason
+                    manual_reason = st.selectbox(
+                        "Exit Reason",
+                        [
+                            "Manual Exit - Strategy Change",
+                            "Manual Exit - Risk Management",
+                            "Manual Exit - Capital Reallocation",
+                            "Manual Exit - News/Event Based",
+                            "Manual Exit - Partial Profit Booking",
+                            "Manual Exit - Market Conditions",
+                            "Manual Exit - Other"
+                        ],
+                        key=f"manual_reason_{r['ticker']}"
+                    )
+                    
+                    # Calculate P&L based on manual exit price
+                    if r['position_type'] == 'LONG':
+                        manual_pnl = (manual_exit_price - r['entry_price']) * r['quantity']
+                        manual_pnl_pct = ((manual_exit_price - r['entry_price']) / r['entry_price']) * 100
                     else:
-                        st.info("No exit conditions met")               
+                        manual_pnl = (r['entry_price'] - manual_exit_price) * r['quantity']
+                        manual_pnl_pct = ((r['entry_price'] - manual_exit_price) / r['entry_price']) * 100
+                    
+                    # Show P&L preview
+                    pnl_preview_color = "#28a745" if manual_pnl >= 0 else "#dc3545"
+                    st.markdown(f"""
+                    <div style='background:{pnl_preview_color}15; padding:10px; border-radius:8px; 
+                                border-left:3px solid {pnl_preview_color}; margin:5px 0;'>
+                        <strong>P&L Preview:</strong> 
+                        <span style='color:{pnl_preview_color}; font-weight:bold;'>
+                            ₹{manual_pnl:+,.2f} ({manual_pnl_pct:+.2f}%)
+                        </span><br>
+                        <small>Entry: ₹{r['entry_price']:,.2f} → Exit: ₹{manual_exit_price:,.2f} × {r['quantity']} qty</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Confirmation checkbox to prevent accidental clicks
+                    confirm_exit = st.checkbox(
+                        f"I confirm I want to exit {r['ticker']}",
+                        value=False,
+                        key=f"confirm_manual_{r['ticker']}"
+                    )
+                    
+                    if st.button(
+                        f"✋ Execute Manual Exit",
+                        key=f"manual_exit_{r['ticker']}",
+                        use_container_width=True,
+                        type="secondary",
+                        disabled=not confirm_exit,
+                        help="Check the confirmation box above to enable this button"
+                    ):
+                        if confirm_exit:
+                            with st.spinner(f"Processing manual exit for {r['ticker']}..."):
+                                # Create a modified result dict with the manual exit price
+                                manual_result = r.copy()
+                                manual_result['current_price'] = manual_exit_price
+                                manual_result['pnl_amount'] = manual_pnl
+                                manual_result['pnl_percent'] = manual_pnl_pct
+                                
+                                success, msg = mark_position_inactive(
+                                    r['ticker'],
+                                    manual_exit_price,
+                                    manual_pnl,
+                                    manual_reason,
+                                    should_send_email=True,
+                                    email_settings=settings["email_settings"],
+                                    result=manual_result
+                                )
+                                
+                                if success:
+                                    st.success(f"✅ {msg}")
+                                    st.success("📧 Exit notification email sent!")
+                                    
+                                    # Log the trade
+                                    log_trade(
+                                        r['ticker'],
+                                        r['entry_price'],
+                                        manual_exit_price,
+                                        r['quantity'],
+                                        r['position_type'],
+                                        manual_reason
+                                    )
+                                    
+                                    if manual_pnl > 0:
+                                        st.balloons()
+                                    
+                                    time.sleep(2)
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Failed: {msg}")
+                        else:
+                            st.warning("⚠️ Please check the confirmation box first")             
     
     # =========================================================================
     # TAB 2: CHARTS
