@@ -122,19 +122,67 @@ st.markdown("""
     /* ================================================================
        PROFESSIONAL TRADING TERMINAL THEME
        ================================================================ */
+        /* ================================================================
+       THEME VARIABLES - Controls Light/Dark mode
+       ================================================================ */
     
+    /* Dark mode (default) */
+    :root {
+        --bg-primary: #0a0e17;
+        --bg-secondary: #0f1419;
+        --bg-card: #141c27;
+        --border-color: #1e2a3a;
+        --text-primary: #e2e8f0;
+        --text-secondary: #a0aec0;
+        --text-muted: #4a5568;
+        --green: #00d4aa;
+        --red: #ff4757;
+        --yellow: #ffa502;
+        --blue: #00b4d8;
+        --purple: #7b68ee;
+    }
+    
+    /* Light mode override - activates when Streamlit is in light mode */
+    @media (prefers-color-scheme: light) {
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8f9fa;
+            --bg-card: #ffffff;
+            --border-color: #e2e8f0;
+            --text-primary: #1a202c;
+            --text-secondary: #4a5568;
+            --text-muted: #718096;
+            --green: #22c55e;
+            --red: #ef4444;
+            --yellow: #f59e0b;
+            --blue: #3b82f6;
+            --purple: #8b5cf6;
+        }
+    }
+    
+    /* Also detect Streamlit's own light theme class */
+    [data-testid="stAppViewContainer"][data-theme="light"],
+    .stApp[data-theme="light"] {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-card: #ffffff;
+        --border-color: #e2e8f0;
+        --text-primary: #1a202c;
+        --text-secondary: #4a5568;
+        --text-muted: #718096;
+    }
     /* ---------- Global Background & Font ---------- */
     .stApp {
-        background-color: #0a0e17;
+        background-color: var(--bg-primary, #0a0e17);
     }
     
     section[data-testid="stSidebar"] {
-        background-color: #0f1419;
-        border-right: 1px solid #1e2a3a;
+        background-color: var(--bg-secondary, #0f1419);
+        border-right: 1px solid var(--border-color, #1e2a3a);
     }
-    
+            
     section[data-testid="stSidebar"] * {
-        color: #c8d6e5 !important;
+        color: var(--text-secondary, #c8d6e5) !important;
     }
     
     section[data-testid="stSidebar"] .stMarkdown h2,
@@ -234,14 +282,8 @@ st.markdown("""
     }
     
     .summary-card {
-        background: linear-gradient(145deg, #141c27, #0f1419);
-        border: 1px solid #1e2a3a;
-        border-radius: 10px;
-        padding: 14px 16px;
-        text-align: center;
-        transition: all 0.2s ease;
-    }
-    
+        background: linear-gradient(145deg, var(--bg-card, #141c27), var(--bg-secondary, #0f1419));
+        border: 1px solid var(--border-color, #1e2a3a);
     .summary-card:hover {
         border-color: #00d4aa;
         transform: translateY(-2px);
@@ -269,14 +311,8 @@ st.markdown("""
     
     /* ---------- Position Cards ---------- */
     .position-card {
-        background: linear-gradient(145deg, #141c27, #0f1419);
-        border: 1px solid #1e2a3a;
-        border-radius: 12px;
-        padding: 0;
-        margin: 8px 0;
-        overflow: hidden;
-        transition: all 0.2s ease;
-    }
+        background: linear-gradient(145deg, var(--bg-card, #141c27), var(--bg-secondary, #0f1419));
+        border: 1px solid var(--border-color, #1e2a3a);
     
     .position-card:hover {
         border-color: #2d3a4a;
@@ -457,12 +493,8 @@ st.markdown("""
     
     /* ---------- Score Gauges ---------- */
     .score-gauge {
-        background: #0f1419;
-        border: 1px solid #1e2a3a;
-        border-radius: 10px;
-        padding: 14px;
-        text-align: center;
-    }
+        background: var(--bg-secondary, #0f1419);
+        border: 1px solid var(--border-color, #1e2a3a);
     
     .score-value {
         font-size: 2rem;
@@ -646,16 +678,11 @@ st.markdown("""
     [data-testid="stMetricValue"] {
         font-size: 1.1rem !important;
         font-weight: 700 !important;
-        color: #e2e8f0 !important;
-        font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
-    }
+        color: var(--text-primary, #e2e8f0) !important;
     
     [data-testid="stMetricLabel"] {
         font-size: 0.7rem !important;
-        color: #4a5568 !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.08em !important;
-    }
+        color: var(--text-muted, #4a5568) !important;
     
     [data-testid="stMetricDelta"] > div {
         font-size: 0.75rem !important;
@@ -679,20 +706,11 @@ st.markdown("""
     /* ---------- Tabs ---------- */
     .stTabs [data-baseweb="tab-list"] {
         gap: 0px;
-        background: #0f1419;
-        border-radius: 10px;
-        padding: 4px;
-        border: 1px solid #1e2a3a;
-    }
+        background: var(--bg-secondary, #0f1419);
     
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px;
-        color: #4a5568;
-        font-weight: 600;
-        font-size: 0.8rem;
-        padding: 8px 16px;
-        letter-spacing: 0.02em;
-    }
+        color: var(--text-muted, #4a5568);
     
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #00d4aa, #00b894) !important;
@@ -789,6 +807,59 @@ st.markdown("""
         }
         .summary-grid {
             grid-template-columns: repeat(2, 1fr);
+        }
+    }
+            
+    /* Light mode overrides for inline-styled HTML elements */
+    @media (prefers-color-scheme: light) {
+        .position-header, .position-body, .level-row {
+            border-color: #e2e8f0 !important;
+        }
+        
+        .position-ticker {
+            color: #1a202c !important;
+        }
+        
+        .position-metric-value {
+            color: #1a202c !important;
+        }
+        
+        .level-label {
+            color: #718096 !important;
+        }
+        
+        .level-value {
+            color: #1a202c !important;
+        }
+        
+        .score-label {
+            color: #718096 !important;
+        }
+        
+        .summary-card-value {
+            color: #1a202c !important;
+        }
+        
+        .summary-card-label {
+            color: #718096 !important;
+        }
+        
+        .terminal-footer {
+            color: #a0aec0 !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        .pattern-card {
+            background: #f8f9fa !important;
+            border-color: #e2e8f0 !important;
+        }
+        
+        .position-metric-label {
+            color: #718096 !important;
+        }
+        
+        .market-bar-label, .summary-card-delta {
+            color: #718096 !important;
         }
     }
 </style>
@@ -4996,7 +5067,7 @@ def main():
     # Render sidebar and get settings
     settings = render_sidebar()
     
-        # Market Status
+    # Market Status
     is_open, market_status, market_msg, market_icon = is_market_hours()
     ist_now = get_ist_now()
     
@@ -5215,7 +5286,6 @@ def main():
     st.divider()
     
     # Load Portfolio
-        # Load Portfolio
     portfolio = load_portfolio()
     
     if portfolio is None or len(portfolio) == 0:
@@ -5833,7 +5903,8 @@ def main():
                                     st.error(f"❌ {msg}")
                     
                     # MANUAL EXIT (always available)
-                    with st.popover("✋ Manual Exit", use_container_width=True):
+                                        # MANUAL EXIT (always available - works with all Streamlit versions)
+                    with st.expander(f"✋ Manual Exit {r['ticker']}", expanded=False):
                         manual_exit_price = st.number_input(
                             "Exit Price", min_value=0.01,
                             value=float(round_to_tick_size(r['current_price'])),
@@ -5873,7 +5944,7 @@ def main():
                                 time.sleep(2)
                                 st.rerun()
                             else:
-                                st.error(f"❌ {msg}")           
+                                st.error(f"❌ {msg}")     
     
     # =========================================================================
     # TAB 2: CHARTS
@@ -6113,7 +6184,7 @@ def main():
     # =========================================================================
     with tab6:
         display_performance_dashboard()
-        # =========================================================================
+    
     # =========================================================================
     # TAB 7: DETAILS
     # =========================================================================
